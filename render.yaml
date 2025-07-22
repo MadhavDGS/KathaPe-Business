@@ -7,7 +7,7 @@ services:
     plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.8
+        value: 3.11.10
       - key: RENDER
         value: true
       - key: RENDER_EMERGENCY_LOGIN
