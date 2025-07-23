@@ -433,16 +433,16 @@ def business_transactions(customer_id):
         
         if not amount or not transaction_type:
             flash('Please enter amount and transaction type', 'error')
-            return redirect(url_for('transactions', customer_id=customer_id))
+            return redirect(url_for('business_transactions', customer_id=customer_id))
         
         try:
             amount = float(amount)
             if amount <= 0:
                 flash('Amount must be greater than 0', 'error')
-                return redirect(url_for('transactions', customer_id=customer_id))
+                return redirect(url_for('business_transactions', customer_id=customer_id))
         except ValueError:
             flash('Invalid amount', 'error')
-            return redirect(url_for('transactions', customer_id=customer_id))
+            return redirect(url_for('business_transactions', customer_id=customer_id))
         
         try:
             # Create transaction
@@ -473,7 +473,7 @@ def business_transactions(customer_id):
             print(f"Error adding transaction: {str(e)}")
             flash(f'Error adding transaction: {str(e)}', 'error')
         
-        return redirect(url_for('customer_details', customer_id=customer_id))
+        return redirect(url_for('business_customer_details', customer_id=customer_id))
     
     # GET request - show transaction form
     customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
