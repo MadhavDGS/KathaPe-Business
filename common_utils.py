@@ -32,11 +32,10 @@ logger = logging.getLogger(__name__)
 # Check if running on Render
 RENDER_DEPLOYMENT = os.environ.get('RENDER', False)
 
-# Environment variables - UPDATE THESE WITH YOUR NEW DATABASE URLs
-# Internal URL (for use within Render's network):
-DATABASE_URL = 'YOUR_NEW_INTERNAL_DATABASE_URL_HERE'
-# External URL (for use outside Render's network):
-EXTERNAL_DATABASE_URL = 'YOUR_NEW_EXTERNAL_DATABASE_URL_HERE'
+# Environment variables - Database URLs
+# Use the actual Render PostgreSQL URL
+DATABASE_URL = 'postgresql://kathape_database_user:Ht2wROzJ5M2VfxVXvJ3iO4L45Q9GC2Wb@dpg-d20j432li9vc73a35od0-a.singapore-postgres.render.com/kathape_database'
+EXTERNAL_DATABASE_URL = 'postgresql://kathape_database_user:Ht2wROzJ5M2VfxVXvJ3iO4L45Q9GC2Wb@dpg-d20j432li9vc73a35od0-a.singapore-postgres.render.com/kathape_database'
 
 # For local development, allow override via environment variables
 DATABASE_URL = os.environ.get('DATABASE_URL', DATABASE_URL)
