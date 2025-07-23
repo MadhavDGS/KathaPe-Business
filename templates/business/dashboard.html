@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Business Dashboard{% endblock %}
+{% bloc            <div class="summary-content">
+                <div class="summary-label">TOTAL CREDIT GIVEN</div>
+                <div class="summary-amount">{{ summary.total_credit | currency }}</div>
+            </div>
+        </div>
+        <div class="summary-card balance-card">
+            <div class="summary-icon">
+                <i class="fas fa-wallet"></i>
+            </div>
+            <div class="summary-content">
+                <div class="summary-label">TOTAL TO RECEIVE</div>
+                <div class="summary-amount">{{ summary.total_outstanding | currency }}</div>
+            </div>iness Dashboard{% endblock %}
 
 {% block header_title %}Dashboard{% endblock %}
 
@@ -43,7 +55,7 @@
             </div>
             <div class="summary-content">
                 <div class="summary-label">TOTAL TO RECEIVE</div>
-                <div class="summary-amount">₹{{ summary.total_payments }}</div>
+                <div class="summary-amount">₹{{ summary.total_outstanding }}</div>
             </div>
         </div>
     </div>
@@ -106,7 +118,7 @@
                     <div class="customer-info">
                         <div class="customer-name">{{ customer.name }}</div>
                         <div class="customer-balance {% if customer.current_balance > 0 %}positive{% endif %}">
-                            ₹{{ customer.current_balance|abs }}
+                            {{ customer.current_balance | currency }}
                         </div>
                     </div>
                     <div class="customer-actions">
@@ -146,7 +158,7 @@
                         <div class="transaction-date">{{ transaction.created_at|datetime }}</div>
                     </div>
                     <div class="transaction-amount {{ transaction.transaction_type }}">
-                        {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}₹{{ transaction.amount }}
+                        {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}{{ transaction.amount | currency }}
                     </div>
                 </div>
             {% endfor %}

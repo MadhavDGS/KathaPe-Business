@@ -38,7 +38,7 @@
                         <p class="customer-phone">{{ customer.phone_number }}</p>
                     </div>
                     <div class="customer-balance {% if customer.current_balance > 0 %}positive{% endif %}">
-                        ₹{{ customer.current_balance|abs }}
+                        {{ customer.current_balance | currency }}
                     </div>
                     <div class="remind-action">
                         <a href="{{ url_for('remind_customer', customer_id=customer.id) }}" class="remind-btn" onclick="event.stopPropagation()">

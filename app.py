@@ -10,6 +10,18 @@ business_app = create_app('KathaPe-Business')
 def datetime_filter(value, format='%d %b %Y, %I:%M %p'):
     return format_datetime(value, format)
 
+@business_app.template_filter('currency')
+def currency_filter(value):
+    """Format a number as currency with proper decimal places"""
+    if value is None:
+        return "₹0.00"
+    try:
+        # Convert to float and format with 2 decimal places
+        amount = float(value)
+        return f"₹{amount:,.2f}"
+    except (ValueError, TypeError):
+        return "₹0.00"
+
 # Business routes
 @business_app.route('/')
 def index():
@@ -259,12 +271,28 @@ def business_dashboard():
                         'customer_name': tx.get('customer_name', 'Unknown')
                     })
                 
-                # Calculate totals
+                # Calculate totals - Fix the conversion to float
                 cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE business_id = %s AND transaction_type = 'credit'", [business_id])
-                total_credit = cursor.fetchone()[0]
+                total_credit_raw = cursor.fetchone()[0]
+                total_credit = float(total_credit_raw) if total_credit_raw else 0.0
                 
+                cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE business_id = %s AND transaction_type = 'payment'", [business_id])
+                total_payment_raw = cursor.fetchone()[0]
+                total_payment = float(total_payment_raw) if total_payment_raw else 0.0
+                
+                # Total to receive should be total credit given minus payments received
+                total_to_receive = total_credit - total_payment
+                
+                # Alternative: get sum of all positive balances (money owed to business)
                 cursor.execute("SELECT COALESCE(SUM(current_balance), 0) FROM customer_credits WHERE business_id = %s AND current_balance > 0", [business_id])
-                total_payments = cursor.fetchone()[0]
+                total_outstanding_raw = cursor.fetchone()[0]
+                total_outstanding = float(total_outstanding_raw) if total_outstanding_raw else 0.0
+                
+                print(f"DEBUG: Business Dashboard Calculations:")
+                print(f"Total Credit: {total_credit}")
+                print(f"Total Payment: {total_payment}")
+                print(f"Total Outstanding: {total_outstanding}")
+                print(f"Total To Receive: {total_to_receive}")
             
             conn.close()
             
@@ -280,8 +308,10 @@ def business_dashboard():
         
         summary = {
             'total_customers': total_customers,
-            'total_credit': total_credit,
-            'total_payments': total_payments
+            'total_credit': round(total_credit, 2),
+            'total_payment': round(total_payment, 2),
+            'total_to_receive': round(total_to_receive, 2),
+            'total_outstanding': round(total_outstanding, 2)
         }
         
         return render_template('business/dashboard.html', 

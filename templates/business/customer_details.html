@@ -44,11 +44,11 @@
     <div class="summary-cards">
         <div class="summary-card credit-card">
             <div class="summary-label">YOU GAVE</div>
-            <div class="summary-amount">₹{{ credit_total|default(0) }}</div>
+            <div class="summary-amount">{{ credit_total | currency }}</div>
         </div>
         <div class="summary-card balance-card">
             <div class="summary-label">CUSTOMER SHOULD GIVE</div>
-            <div class="summary-amount">₹{{ customer.get('current_balance', 0)|abs }}</div>
+            <div class="summary-amount">{{ customer.get('current_balance', 0) | currency }}</div>
         </div>
     </div>
 
@@ -75,9 +75,9 @@
                     </div>
                     <div class="transaction-amount {% if transaction.get('transaction_type') == 'credit' %}credit{% else %}payment{% endif %}">
                         {% if transaction.get('transaction_type') == 'credit' %}
-                            +₹{{ transaction.get('amount', 0) }}
+                            +{{ transaction.get('amount', 0) | currency }}
                         {% else %}
-                            -₹{{ transaction.get('amount', 0) }}
+                            -{{ transaction.get('amount', 0) | currency }}
                         {% endif %}
                     </div>
                     {% if transaction.get('media_url') %}
