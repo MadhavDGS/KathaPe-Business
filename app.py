@@ -465,6 +465,46 @@ def business_transactions(customer_id):
             result = execute_query(query, values, fetch_one=True, commit=True)
             
             if result:
+                # Update customer balance in customer_credits table
+                try:
+                    # Get current balance
+                    current_credit = execute_query(
+                        "SELECT current_balance FROM customer_credits WHERE business_id = %s AND customer_id = %s", 
+                        [business_id, customer_id], 
+                        fetch_one=True
+                    )
+                    
+                    if current_credit:
+                        current_balance = float(current_credit['current_balance']) if current_credit['current_balance'] else 0.0
+                        
+                        # Calculate new balance based on transaction type
+                        if transaction_type == 'credit':
+                            new_balance = current_balance + amount  # Customer owes more
+                        else:  # payment
+                            new_balance = current_balance - amount  # Customer owes less
+                        
+                        # Update the balance
+                        execute_query(
+                            "UPDATE customer_credits SET current_balance = %s, updated_at = %s WHERE business_id = %s AND customer_id = %s",
+                            [new_balance, datetime.now().isoformat(), business_id, customer_id],
+                            commit=True
+                        )
+                        
+                        print(f"Updated customer balance: {current_balance} -> {new_balance} (transaction: {transaction_type} {amount})")
+                    else:
+                        # Create customer credit record if it doesn't exist
+                        initial_balance = amount if transaction_type == 'credit' else -amount
+                        execute_query(
+                            "INSERT INTO customer_credits (id, business_id, customer_id, current_balance, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                            [str(uuid.uuid4()), business_id, customer_id, initial_balance, datetime.now().isoformat(), datetime.now().isoformat()],
+                            commit=True
+                        )
+                        print(f"Created new customer credit record with balance: {initial_balance}")
+                
+                except Exception as balance_error:
+                    print(f"Error updating customer balance: {str(balance_error)}")
+                    # Don't fail the whole transaction, just log the error
+                
                 flash('Transaction added successfully', 'success')
             else:
                 flash('Failed to add transaction. Please try again.', 'error')
