@@ -311,8 +311,13 @@ def business_customers():
         if customer_id:
             customer_detail = query_table('customers', filters=[('id', 'eq', customer_id)])
             if customer_detail and customer_detail.data:
-                customer = customer_detail.data[0]
-                customer['current_balance'] = float(credit.get('current_balance', 0))
+                customer = dict(customer_detail.data[0])  # Convert to regular dict
+                # Get current balance from credit record, default to 0 if not found
+                try:
+                    current_balance = float(credit.get('current_balance', 0)) if 'current_balance' in credit else 0.0
+                except (ValueError, TypeError):
+                    current_balance = 0.0
+                customer['current_balance'] = current_balance
                 customers.append(customer)
     
     return render_template('business/customers.html', customers=customers)
@@ -472,7 +477,7 @@ def business_transactions(customer_id):
     
     # GET request - show transaction form
     customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
-    customer = customer_response.data[0] if customer_response and customer_response.data else {}
+    customer = dict(customer_response.data[0]) if customer_response and customer_response.data else {}
     
     # Get current balance
     credit_response = query_table('customer_credits', 
