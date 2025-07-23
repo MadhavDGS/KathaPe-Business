@@ -1,18 +1,6 @@
 {% extends "base.html" %}
 
-{% bloc            <div class="summary-content">
-                <div class="summary-label">TOTAL CREDIT GIVEN</div>
-                <div class="summary-amount">{{ summary.total_credit | currency }}</div>
-            </div>
-        </div>
-        <div class="summary-card balance-card">
-            <div class="summary-icon">
-                <i class="fas fa-wallet"></i>
-            </div>
-            <div class="summary-content">
-                <div class="summary-label">TOTAL TO RECEIVE</div>
-                <div class="summary-amount">{{ summary.total_outstanding | currency }}</div>
-            </div>iness Dashboard{% endblock %}
+{% block title %}Business Dashboard{% endblock %}
 
 {% block header_title %}Dashboard{% endblock %}
 
@@ -46,7 +34,7 @@
             </div>
             <div class="summary-content">
                 <div class="summary-label">TOTAL CREDIT GIVEN</div>
-                <div class="summary-amount">₹{{ summary.total_credit }}</div>
+                <div class="summary-amount">{{ summary.total_credit | currency }}</div>
             </div>
         </div>
         <div class="summary-card balance-card">
@@ -55,7 +43,7 @@
             </div>
             <div class="summary-content">
                 <div class="summary-label">TOTAL TO RECEIVE</div>
-                <div class="summary-amount">₹{{ summary.total_outstanding }}</div>
+                <div class="summary-amount">{{ summary.total_outstanding | currency }}</div>
             </div>
         </div>
     </div>
