@@ -60,17 +60,7 @@ def login():
             session['phone_number'] = phone
             session.permanent = True
             
-            # Set emergency login flag
-            RENDER_EMERGENCY_LOGIN = os.environ.get('RENDER_EMERGENCY_LOGIN', 'false').lower() == 'true'
-            
-            if RENDER_DEPLOYMENT and RENDER_EMERGENCY_LOGIN:
-                logger.info("Using RENDER_EMERGENCY_LOGIN for business")
-                business_id = str(uuid.uuid4())
-                session['business_id'] = business_id
-                session['business_name'] = f"{user_name}'s Business"
-                session['access_pin'] = f"{int(datetime.now().timestamp()) % 10000:04d}"
-                flash('Successfully logged in to business dashboard.', 'success')
-                return redirect(url_for('business_dashboard'))
+            # Emergency login disabled for security - all logins must authenticate with database
             
             # Try database authentication
             try:
@@ -118,32 +108,17 @@ def login():
                 
             except Exception as e:
                 logger.error(f"Database error in business login: {str(e)}")
-                # Fallback to session data
-                business_id = str(uuid.uuid4())
-                session['business_id'] = business_id
-                session['business_name'] = f"{user_name}'s Business"
-                session['access_pin'] = f"{int(datetime.now().timestamp()) % 10000:04d}"
-                flash('Login successful with offline mode.', 'success')
-                return redirect(url_for('business_dashboard'))
+                # Don't allow fallback login - database authentication required
+                flash('Login service temporarily unavailable. Please try again.', 'error')
+                return render_template('login.html')
         
         # GET request
         return render_template('login.html')
         
     except Exception as e:
         logger.critical(f"Critical error in business login: {str(e)}")
-        # Emergency fallback
-        if request.method == 'POST':
-            emergency_user_id = str(uuid.uuid4())
-            session['user_id'] = emergency_user_id
-            session['user_name'] = 'Emergency Business User'
-            session['user_type'] = 'business'
-            session['phone_number'] = request.form.get('phone', '0000000000')
-            session['business_id'] = str(uuid.uuid4())
-            session['business_name'] = 'Emergency Business'
-            session['access_pin'] = '0000'
-            session.permanent = True
-            return redirect(url_for('business_dashboard'))
-        
+        # Don't allow emergency fallback - require proper authentication
+        flash('Login error. Please try again.', 'error')
         return render_template('login.html')
 
 @business_app.route('/register', methods=['GET', 'POST'])
