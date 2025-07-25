@@ -51,16 +51,8 @@ def login():
                 flash('Please enter both phone number and password', 'error')
                 return render_template('login.html')
             
-            # Set up session data
-            user_id = str(uuid.uuid4())
-            user_name = f"Business {phone[-4:]}" if phone and len(phone) > 4 else "Business User"
-            session['user_id'] = user_id
-            session['user_name'] = user_name
-            session['user_type'] = 'business'
-            session['phone_number'] = phone
-            session.permanent = True
-            
             # Emergency login disabled for security - all logins must authenticate with database
+            # Do NOT set session data before authentication!
             
             # Try database authentication
             try:
@@ -73,9 +65,15 @@ def login():
                     user_data = cursor.fetchone()
                     
                     if user_data and user_data['password'] == password:
+                        # ONLY set session after successful password verification
                         user_id = user_data['id']
+                        user_name = user_data.get('name', f"Business {phone[-4:]}" if phone and len(phone) > 4 else "Business User")
+                        
                         session['user_id'] = user_id
-                        session['user_name'] = user_data.get('name', user_name)
+                        session['user_name'] = user_name
+                        session['user_type'] = 'business'
+                        session['phone_number'] = phone
+                        session.permanent = True
                         
                         # Get business details
                         cursor.execute("SELECT id, name, access_pin FROM businesses WHERE user_id = %s LIMIT 1", [user_id])
