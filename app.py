@@ -82,7 +82,7 @@ def login():
                     cursor.execute("SELECT id, name, password FROM users WHERE phone_number = %s AND user_type = 'business' LIMIT 1", [phone])
                     user_data = cursor.fetchone()
                     
-                    if user_data:
+                    if user_data and user_data['password'] == password:
                         user_id = user_data['id']
                         session['user_id'] = user_id
                         session['user_name'] = user_data.get('name', user_name)
@@ -107,10 +107,14 @@ def login():
                             session['business_id'] = business_id
                             session['business_name'] = f"{session['user_name']}'s Business"
                             session['access_pin'] = access_pin
-                
-                conn.close()
-                flash('Successfully logged in!', 'success')
-                return redirect(url_for('business_dashboard'))
+                        
+                        conn.close()
+                        flash('Successfully logged in!', 'success')
+                        return redirect(url_for('business_dashboard'))
+                    else:
+                        conn.close()
+                        flash('Invalid phone number or password', 'error')
+                        return render_template('login.html')
                 
             except Exception as e:
                 logger.error(f"Database error in business login: {str(e)}")
