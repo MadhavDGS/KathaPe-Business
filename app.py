@@ -208,12 +208,12 @@ def business_dashboard():
                 cursor.execute("SELECT COUNT(*) FROM customer_credits WHERE business_id = %s", [business_id])
                 total_customers = cursor.fetchone()[0]
                 
-                # Get recent customers - prioritize those with outstanding balances
+                # Get recent customers - show only those with outstanding balances (> 0)
                 cursor.execute("""
                     SELECT c.*, cc.current_balance 
                     FROM customers c
                     JOIN customer_credits cc ON c.id = cc.customer_id
-                    WHERE cc.business_id = %s
+                    WHERE cc.business_id = %s AND cc.current_balance > 0
                     ORDER BY cc.current_balance DESC, cc.updated_at DESC
                     LIMIT 5
                 """, [business_id])
