@@ -48,7 +48,7 @@
         </div>
         <div class="summary-card balance-card">
             <div class="summary-label">CUSTOMER SHOULD GIVE</div>
-            <div class="summary-amount">{{ customer.get('current_balance', 0) | currency }}</div>
+            <div class="summary-amount">{{ calculated_balance | currency }}</div>
         </div>
     </div>
 

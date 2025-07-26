@@ -208,13 +208,13 @@ def business_dashboard():
                 cursor.execute("SELECT COUNT(*) FROM customer_credits WHERE business_id = %s", [business_id])
                 total_customers = cursor.fetchone()[0]
                 
-                # Get recent customers
+                # Get recent customers - prioritize those with outstanding balances
                 cursor.execute("""
                     SELECT c.*, cc.current_balance 
                     FROM customers c
                     JOIN customer_credits cc ON c.id = cc.customer_id
                     WHERE cc.business_id = %s
-                    ORDER BY cc.created_at DESC
+                    ORDER BY cc.current_balance DESC, cc.updated_at DESC
                     LIMIT 5
                 """, [business_id])
                 
@@ -310,6 +310,9 @@ def business_customers():
                 customer['current_balance'] = current_balance
                 customers.append(customer)
     
+    # Sort customers by current balance (highest first), then by name
+    customers.sort(key=lambda x: (-x.get('current_balance', 0), x.get('name', '')))
+    
     return render_template('business/customers.html', customers=customers)
 
 @business_app.route('/customer/<customer_id>')
@@ -343,6 +346,9 @@ def business_customer_details(customer_id):
     credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
     payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
     
+    # Calculate the actual balance that customer should give
+    calculated_balance = credit_total - payment_total
+    
     # Sort transactions by date, newest first
     transactions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
     
@@ -350,7 +356,8 @@ def business_customer_details(customer_id):
                           customer=customer, 
                           transactions=transactions,
                           credit_total=credit_total,
-                          payment_total=payment_total)
+                          payment_total=payment_total,
+                          calculated_balance=calculated_balance)
 
 @business_app.route('/add_customer', methods=['GET', 'POST'])
 @login_required
