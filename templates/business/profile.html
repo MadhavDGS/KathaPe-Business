@@ -42,8 +42,17 @@
                 <div class="form-group">
                     <label>Business PIN</label>
                     <div class="pin-display">
-                        <span class="pin">{{ business.access_pin }}</span>
-                        <span class="pin-note">This PIN is used by customers to connect with your business</span>
+                        <div class="pin-content">
+                            <span class="pin">{{ business.access_pin }}</span>
+                            <span class="pin-note">This permanent PIN is used by customers to connect with your business</span>
+                        </div>
+                        <div class="pin-actions">
+                            <form method="POST" action="{{ url_for('regenerate_business_pin') }}" onsubmit="return confirmPinRegeneration()">
+                                <button type="submit" class="btn btn-warning btn-sm">
+                                    <i class="fas fa-sync-alt"></i> Generate New PIN
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
                 
@@ -145,11 +154,17 @@
 
 .pin-display {
     background-color: rgba(255, 255, 255, 0.05);
-    padding: 12px 15px;
+    padding: 15px;
     border-radius: 8px;
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
     border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pin-content {
+    display: flex;
+    flex-direction: column;
 }
 
 .pin {
@@ -163,6 +178,27 @@
 .pin-note {
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.pin-actions {
+    margin-left: 15px;
+}
+
+.btn-warning {
+    background-color: #f39c12;
+    color: white;
+    font-size: 12px;
+    padding: 8px 12px;
+}
+
+.btn-warning:hover {
+    background-color: #e67e22;
+    transform: translateY(-1px);
+}
+
+.btn-sm {
+    font-size: 12px;
+    padding: 6px 12px;
 }
 
 .profile-photo-container {
@@ -224,4 +260,12 @@
     background-color: rgba(255, 255, 255, 0.15);
     transform: translateY(-2px);
 }
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmPinRegeneration() {
+    return confirm('Are you sure you want to generate a new PIN? Your current PIN will be permanently replaced and customers will need the new PIN to connect with your business.');
+}
+</script>
 {% endblock %} 

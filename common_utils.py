@@ -445,6 +445,51 @@ def customer_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Function to generate a permanent business PIN
+def generate_permanent_business_pin():
+    """Generate a permanent 4-digit PIN for business identification"""
+    import random
+    import string
+    
+    # Generate a random 4-digit PIN (1000-9999)
+    pin = f"{random.randint(1000, 9999):04d}"
+    
+    # Ensure the PIN doesn't start with 0 and avoid easily guessable patterns
+    while (pin.startswith('0') or 
+           pin == '1234' or pin == '0000' or pin == '9999' or 
+           pin == '1111' or pin == '2222' or pin == '3333' or 
+           pin == '4444' or pin == '5555' or pin == '6666' or 
+           pin == '7777' or pin == '8888'):
+        pin = f"{random.randint(1000, 9999):04d}"
+    
+    return pin
+
+def check_pin_uniqueness(pin):
+    """Check if the generated PIN is unique in the database"""
+    try:
+        result = execute_query(
+            "SELECT COUNT(*) as count FROM businesses WHERE access_pin = %s",
+            [pin],
+            fetch_one=True
+        )
+        return result['count'] == 0 if result else True
+    except Exception as e:
+        print(f"Error checking PIN uniqueness: {e}")
+        return True
+
+def get_unique_business_pin():
+    """Generate a unique business PIN that doesn't exist in the database"""
+    max_attempts = 100
+    for _ in range(max_attempts):
+        pin = generate_permanent_business_pin()
+        if check_pin_uniqueness(pin):
+            return pin
+    
+    # Fallback: if we can't find a unique PIN after 100 attempts, 
+    # use timestamp-based generation as last resort
+    print("WARNING: Could not generate unique PIN, using timestamp fallback")
+    return f"{int(datetime.now().timestamp()) % 10000:04d}"
+
 # Function to generate QR code for business
 def generate_business_qr_code(business_id, access_pin):
     if RENDER_DEPLOYMENT:
@@ -460,10 +505,10 @@ def generate_business_qr_code(business_id, access_pin):
             print("QR code generation not available, using placeholder")
             return "static/images/placeholder_qr.png"
         
-        # Make sure we have a valid PIN
+        # Make sure we have a valid PIN - if not, this is an error
         if not access_pin:
-            access_pin = f"{int(datetime.now().timestamp()) % 10000:04d}"
-            print(f"WARNING: No access pin provided, generating temporary: {access_pin}")
+            print(f"ERROR: No access pin provided for QR code generation!")
+            return "static/images/placeholder_qr.png"
         
         # Format: "business:PIN" - this is what the scanner expects
         qr_data = f"business:{access_pin}"

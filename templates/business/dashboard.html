@@ -59,8 +59,9 @@
         </div>
         <div class="connect-content">
             <div class="pin-display">
-                <span class="label">Your PIN:</span>
+                <span class="label">Your Business PIN:</span>
                 <span class="pin">{{ business.access_pin }}</span>
+                <span class="pin-subtitle">Permanent identifier for your business</span>
             </div>
             
             <div class="qr-code-container">
@@ -439,6 +440,14 @@ body {
     font-weight: 700;
     color: var(--primary-color);
     letter-spacing: 2px;
+}
+
+.pin-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    display: block;
+    font-style: italic;
 }
 
 .qr-code-container {

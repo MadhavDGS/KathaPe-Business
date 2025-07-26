@@ -86,7 +86,7 @@ def login():
                         else:
                             # Create business record if it doesn't exist
                             business_id = str(uuid.uuid4())
-                            access_pin = f"{int(datetime.now().timestamp()) % 10000:04d}"
+                            access_pin = get_unique_business_pin()  # Use permanent PIN instead of timestamp
                             cursor.execute("""
                                 INSERT INTO businesses (id, user_id, name, access_pin, created_at)
                                 VALUES (%s, %s, %s, %s, %s)
@@ -142,7 +142,7 @@ def register():
             # Create user and business records
             user_id = str(uuid.uuid4())
             business_id = str(uuid.uuid4())
-            access_pin = f"{int(datetime.now().timestamp()) % 10000:04d}"
+            access_pin = get_unique_business_pin()  # Use permanent PIN instead of timestamp
             
             # Create user record
             user_query = """
@@ -568,6 +568,38 @@ def business_profile():
     }
     
     return render_template('business/profile.html', business=business)
+
+@business_app.route('/regenerate_pin', methods=['POST'])
+@login_required
+@business_required
+def regenerate_business_pin():
+    """Regenerate the business PIN"""
+    business_id = safe_uuid(session.get('business_id'))
+    
+    try:
+        # Generate a new unique PIN
+        new_pin = get_unique_business_pin()
+        
+        # Update the business PIN in the database
+        execute_query(
+            "UPDATE businesses SET access_pin = %s, updated_at = %s WHERE id = %s",
+            [new_pin, datetime.now().isoformat(), business_id],
+            commit=True
+        )
+        
+        # Update the session
+        session['access_pin'] = new_pin
+        
+        # Regenerate QR code with new PIN
+        generate_business_qr_code(business_id, new_pin)
+        
+        flash(f'New PIN generated successfully: {new_pin}', 'success')
+        
+    except Exception as e:
+        print(f"Error regenerating PIN: {str(e)}")
+        flash('Error generating new PIN. Please try again.', 'error')
+    
+    return redirect(url_for('business_profile'))
 
 @business_app.route('/qr_image/<business_id>')
 @login_required
