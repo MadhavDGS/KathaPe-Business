@@ -227,14 +227,14 @@ def business_dashboard():
                         'current_balance': float(customer['current_balance']) if customer['current_balance'] else 0
                     })
                 
-                # Get recent transactions
+                # Get recent transactions - increased to 15
                 cursor.execute("""
                     SELECT t.*, c.name as customer_name
                     FROM transactions t
                     LEFT JOIN customers c ON t.customer_id = c.id
                     WHERE t.business_id = %s
                     ORDER BY t.created_at DESC
-                    LIMIT 5
+                    LIMIT 15
                 """, [business_id])
                 
                 transactions_data = cursor.fetchall()
@@ -248,28 +248,14 @@ def business_dashboard():
                         'customer_name': tx.get('customer_name', 'Unknown')
                     })
                 
-                # Calculate totals - Fix the conversion to float
-                cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE business_id = %s AND transaction_type = 'credit'", [business_id])
-                total_credit_raw = cursor.fetchone()[0]
-                total_credit = float(total_credit_raw) if total_credit_raw else 0.0
-                
-                cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE business_id = %s AND transaction_type = 'payment'", [business_id])
-                total_payment_raw = cursor.fetchone()[0]
-                total_payment = float(total_payment_raw) if total_payment_raw else 0.0
-                
-                # Total to receive should be total credit given minus payments received
-                total_to_receive = total_credit - total_payment
-                
-                # Alternative: get sum of all positive balances (money owed to business)
+                # Calculate totals - Use actual customer balance sums instead of transaction totals
+                # This matches how the customer app calculates balances
                 cursor.execute("SELECT COALESCE(SUM(current_balance), 0) FROM customer_credits WHERE business_id = %s AND current_balance > 0", [business_id])
                 total_outstanding_raw = cursor.fetchone()[0]
                 total_outstanding = float(total_outstanding_raw) if total_outstanding_raw else 0.0
                 
                 print(f"DEBUG: Business Dashboard Calculations:")
-                print(f"Total Credit: {total_credit}")
-                print(f"Total Payment: {total_payment}")
-                print(f"Total Outstanding: {total_outstanding}")
-                print(f"Total To Receive: {total_to_receive}")
+                print(f"Total Outstanding (sum of positive customer balances): {total_outstanding}")
             
             conn.close()
             
@@ -285,9 +271,6 @@ def business_dashboard():
         
         summary = {
             'total_customers': total_customers,
-            'total_credit': round(total_credit, 2),
-            'total_payment': round(total_payment, 2),
-            'total_to_receive': round(total_to_receive, 2),
             'total_outstanding': round(total_outstanding, 2)
         }
         
@@ -385,13 +368,14 @@ def add_customer():
         try:
             business_id = safe_uuid(session.get('business_id'))
             
-            # Check if customer already exists
+            # Check if customer already exists by phone number
             existing_customer = execute_query("SELECT id FROM customers WHERE phone_number = %s LIMIT 1", [phone], fetch_one=True)
             
             if existing_customer:
                 customer_id = existing_customer['id']
+                print(f"DEBUG: Found existing customer with ID: {customer_id}")
             else:
-                # Create new customer
+                # Create new customer (but do NOT create a user account - that's only done during registration)
                 customer_id = str(uuid.uuid4())
                 customer_query = """
                     INSERT INTO customers (id, name, phone_number, created_at)
@@ -401,14 +385,19 @@ def add_customer():
                 result = execute_query(customer_query, [customer_id, name, phone, datetime.now().isoformat()], fetch_one=True)
                 if not result:
                     raise Exception("Failed to create customer")
+                print(f"DEBUG: Created new customer with ID: {customer_id}")
             
-            # Create or update customer credit relationship
+            # Check if credit relationship already exists
             existing_credit = execute_query(
                 "SELECT id FROM customer_credits WHERE business_id = %s AND customer_id = %s LIMIT 1", 
                 [business_id, customer_id], fetch_one=True
             )
             
-            if not existing_credit:
+            if existing_credit:
+                flash('Customer already exists in your business!', 'warning')
+                return redirect(url_for('business_customers'))
+            else:
+                # Create new credit relationship
                 credit_query = """
                     INSERT INTO customer_credits (id, business_id, customer_id, current_balance, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s)
@@ -417,6 +406,7 @@ def add_customer():
                     str(uuid.uuid4()), business_id, customer_id, 
                     initial_balance, datetime.now().isoformat(), datetime.now().isoformat()
                 ])
+                print(f"DEBUG: Created credit relationship for customer {customer_id} with business {business_id}")
             
             flash('Customer added successfully!', 'success')
             return redirect(url_for('business_customers'))
@@ -609,6 +599,72 @@ def favicon():
 @business_app.errorhandler(404)
 def page_not_found(e):
     return render_template('errors/404.html'), 404
+
+@business_app.route('/all_transactions')
+@login_required
+@business_required
+def all_transactions():
+    """View all transactions for the business"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        page = int(request.args.get('page', 1))
+        per_page = 50  # Show 50 transactions per page
+        offset = (page - 1) * per_page
+        
+        transactions = []
+        total_count = 0
+        
+        try:
+            # Connect directly to database
+            conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+                # Get total count for pagination
+                cursor.execute("SELECT COUNT(*) FROM transactions WHERE business_id = %s", [business_id])
+                total_count = cursor.fetchone()[0]
+                
+                # Get transactions with pagination
+                cursor.execute("""
+                    SELECT t.*, c.name as customer_name
+                    FROM transactions t
+                    LEFT JOIN customers c ON t.customer_id = c.id
+                    WHERE t.business_id = %s
+                    ORDER BY t.created_at DESC
+                    LIMIT %s OFFSET %s
+                """, [business_id, per_page, offset])
+                
+                transactions_data = cursor.fetchall()
+                for tx in transactions_data:
+                    transactions.append({
+                        'id': tx['id'],
+                        'amount': float(tx['amount']) if tx['amount'] else 0,
+                        'transaction_type': tx['transaction_type'],
+                        'notes': tx.get('notes', ''),
+                        'created_at': tx['created_at'],
+                        'customer_name': tx.get('customer_name', 'Unknown')
+                    })
+            
+            conn.close()
+            
+        except Exception as e:
+            print(f"Database error in business transactions: {str(e)}")
+            flash('Error loading transactions', 'error')
+        
+        # Calculate pagination info
+        total_pages = (total_count + per_page - 1) // per_page
+        has_prev = page > 1
+        has_next = page < total_pages
+        
+        return render_template('business/transactions.html',
+                             transactions=transactions,
+                             page=page,
+                             total_pages=total_pages,
+                             has_prev=has_prev,
+                             has_next=has_next,
+                             total_count=total_count)
+                             
+    except Exception as e:
+        flash(f'Error loading transactions: {str(e)}', 'error')
+        return redirect(url_for('business_dashboard'))
 
 @business_app.route('/remind_customer/<customer_id>')
 @login_required

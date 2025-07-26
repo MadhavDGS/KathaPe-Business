@@ -28,15 +28,6 @@
 
     <!-- Financial Summary -->
     <div class="summary-cards">
-        <div class="summary-card credit-card">
-            <div class="summary-icon">
-                <i class="fas fa-hand-holding-usd"></i>
-            </div>
-            <div class="summary-content">
-                <div class="summary-label">TOTAL CREDIT GIVEN</div>
-                <div class="summary-amount">{{ summary.total_credit | currency }}</div>
-            </div>
-        </div>
         <div class="summary-card balance-card">
             <div class="summary-icon">
                 <i class="fas fa-wallet"></i>
@@ -128,6 +119,7 @@
     <!-- Transactions Section -->
     <div class="section-header">
         <h3>Recent Transactions</h3>
+        <a href="{{ url_for('all_transactions') }}" class="view-all">View All</a>
     </div>
 
     {% if transactions %}
@@ -284,6 +276,7 @@ body {
     display: flex;
     align-items: center;
     transition: transform 0.3s, box-shadow 0.3s;
+    width: 100%;
 }
 
 .summary-card:hover {

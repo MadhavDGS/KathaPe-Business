@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}All Transactions{% endblock %}
+
+{% block header_title %}All Transactions{% endblock %}
+
+{% block content %}
+<div class="transactions-container">
+    <div class="transactions-header">
+        <h2>Transaction History</h2>
+        <p class="transactions-count">Total: {{ total_count }} transactions</p>
+    </div>
+
+    {% if transactions %}
+        <div class="transaction-list">
+            {% for transaction in transactions %}
+                <div class="transaction-card">
+                    <div class="transaction-icon {% if transaction.transaction_type == 'credit' %}credit-icon{% else %}payment-icon{% endif %}">
+                        {% if transaction.transaction_type == 'credit' %}
+                            <i class="fas fa-arrow-up"></i>
+                        {% else %}
+                            <i class="fas fa-arrow-down"></i>
+                        {% endif %}
+                    </div>
+                    <div class="transaction-info">
+                        <div class="transaction-name">{{ transaction.customer_name }}</div>
+                        <div class="transaction-date">{{ transaction.created_at|datetime }}</div>
+                        {% if transaction.notes %}
+                            <div class="transaction-notes">{{ transaction.notes }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="transaction-amount {{ transaction.transaction_type }}">
+                        {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}{{ transaction.amount | currency }}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+            <div class="pagination">
+                {% if has_prev %}
+                    <a href="{{ url_for('all_transactions', page=page-1) }}" class="pagination-btn">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                {% endif %}
+                
+                <span class="pagination-info">
+                    Page {{ page }} of {{ total_pages }}
+                </span>
+                
+                {% if has_next %}
+                    <a href="{{ url_for('all_transactions', page=page+1) }}" class="pagination-btn">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                {% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty-state">
+            <i class="fas fa-receipt"></i>
+            <p>No transactions found</p>
+            <a href="{{ url_for('business_dashboard') }}" class="btn btn-primary">Back to Dashboard</a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block inline_css %}
+:root {
+    --credit-color: #e74c3c;
+    --credit-light: rgba(231, 76, 60, 0.1);
+    --payment-color: #2ecc71;
+    --payment-light: rgba(46, 204, 113, 0.1);
+    --dark-bg: #1a1f2e;
+    --card-bg: #252a3c;
+    --text-color: #f0f0f0;
+    --text-muted: #a0a0a0;
+    --primary-color: #5c67de;
+    --border-radius: 14px;
+    --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    --spacing: 20px;
+}
+
+body {
+    background-color: var(--dark-bg);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+}
+
+.transactions-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+}
+
+.transactions-header {
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.transactions-header h2 {
+    margin: 0 0 10px;
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+}
+
+.transactions-count {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+/* Transaction List */
+.transaction-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: var(--spacing);
+}
+
+.transaction-card {
+    display: flex;
+    align-items: center;
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 18px 20px;
+    box-shadow: var(--box-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.3s;
+}
+
+.transaction-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.transaction-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    font-size: 16px;
+}
+
+.transaction-icon.credit-icon {
+    background-color: var(--credit-light);
+    color: var(--credit-color);
+}
+
+.transaction-icon.payment-icon {
+    background-color: var(--payment-light);
+    color: var(--payment-color);
+}
+
+.transaction-info {
+    flex: 1;
+}
+
+.transaction-name {
+    font-weight: 600;
+    font-size: 16px;
+    color: white;
+    margin-bottom: 4px;
+}
+
+.transaction-date {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.transaction-notes {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.transaction-amount {
+    font-weight: 600;
+    font-size: 18px;
+    text-align: right;
+    min-width: 120px;
+}
+
+.transaction-amount.credit {
+    color: var(--credit-color);
+}
+
+.transaction-amount.payment {
+    color: var(--payment-color);
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 30px;
+    padding: 20px;
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pagination-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 16px;
+    background-color: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(92, 103, 222, 0.3);
+}
+
+.pagination-btn:hover {
+    background-color: #4152b3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(92, 103, 222, 0.4);
+}
+
+.pagination-btn i {
+    font-size: 14px;
+}
+
+.pagination-btn:first-child i {
+    margin-right: 8px;
+}
+
+.pagination-btn:last-child i {
+    margin-left: 8px;
+}
+
+.pagination-info {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 60px 20px;
+    box-shadow: var(--box-shadow);
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.empty-state i {
+    font-size: 48px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0 0 30px;
+    color: var(--text-muted);
+    font-size: 18px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), #4152b3);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s;
+    display: inline-block;
+    box-shadow: 0 4px 15px rgba(92, 103, 222, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(92, 103, 222, 0.4);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .transactions-container {
+        padding: 15px 12px 30px;
+    }
+    
+    .transaction-card {
+        padding: 15px;
+    }
+    
+    .pagination {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .transactions-header h2 {
+        font-size: 24px;
+    }
+    
+    .transaction-amount {
+        font-size: 16px;
+        min-width: 100px;
+    }
+}
+
+@media (max-width: 480px) {
+    .transaction-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 14px;
+    }
+    
+    .transaction-amount {
+        font-size: 15px;
+        min-width: 90px;
+    }
+}
+{% endblock %}
