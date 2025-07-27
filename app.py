@@ -208,24 +208,39 @@ def business_dashboard():
                 cursor.execute("SELECT COUNT(*) FROM customer_credits WHERE business_id = %s", [business_id])
                 total_customers = cursor.fetchone()[0]
                 
-                # Get recent customers - show only those with outstanding balances (> 0)
+                # Get recent customers - calculate balance from transactions like in customers page
                 cursor.execute("""
-                    SELECT c.*, cc.current_balance 
+                    SELECT c.id, c.name, c.phone_number
                     FROM customers c
                     JOIN customer_credits cc ON c.id = cc.customer_id
-                    WHERE cc.business_id = %s AND cc.current_balance > 0
-                    ORDER BY cc.current_balance DESC, cc.updated_at DESC
-                    LIMIT 5
+                    WHERE cc.business_id = %s
+                    ORDER BY cc.updated_at DESC
                 """, [business_id])
                 
                 customers_data = cursor.fetchall()
                 for customer in customers_data:
-                    customers.append({
-                        'id': customer['id'],
-                        'name': customer['name'],
-                        'phone_number': customer['phone_number'],
-                        'current_balance': float(customer['current_balance']) if customer['current_balance'] else 0
-                    })
+                    customer_id = customer['id']
+                    
+                    # Calculate actual balance from transactions
+                    cursor.execute("""
+                        SELECT amount, transaction_type
+                        FROM transactions
+                        WHERE business_id = %s AND customer_id = %s
+                    """, [business_id, customer_id])
+                    
+                    transactions_data = cursor.fetchall()
+                    credit_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'credit'])
+                    payment_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'payment'])
+                    current_balance = credit_total - payment_total
+                    
+                    # Only show customers with positive balance
+                    if current_balance > 0:
+                        customers.append({
+                            'id': customer['id'],
+                            'name': customer['name'],
+                            'phone_number': customer['phone_number'],
+                            'current_balance': current_balance
+                        })
                 
                 # Get recent transactions - increased to 15
                 cursor.execute("""
@@ -248,11 +263,12 @@ def business_dashboard():
                         'customer_name': tx.get('customer_name', 'Unknown')
                     })
                 
-                # Calculate totals - Use actual customer balance sums instead of transaction totals
-                # This matches how the customer app calculates balances
-                cursor.execute("SELECT COALESCE(SUM(current_balance), 0) FROM customer_credits WHERE business_id = %s AND current_balance > 0", [business_id])
-                total_outstanding_raw = cursor.fetchone()[0]
-                total_outstanding = float(total_outstanding_raw) if total_outstanding_raw else 0.0
+                # Calculate total outstanding - sum all customer balances calculated from transactions
+                total_outstanding = sum([customer['current_balance'] for customer in customers])
+                
+                # Sort customers by balance and limit to top 5 for display
+                customers.sort(key=lambda x: x['current_balance'], reverse=True)
+                customers = customers[:5]
                 
                 print(f"DEBUG: Business Dashboard Calculations:")
                 print(f"Total Outstanding (sum of positive customer balances): {total_outstanding}")
@@ -302,11 +318,18 @@ def business_customers():
             customer_detail = query_table('customers', filters=[('id', 'eq', customer_id)])
             if customer_detail and customer_detail.data:
                 customer = dict(customer_detail.data[0])  # Convert to regular dict
-                # Get current balance from credit record, default to 0 if not found
-                try:
-                    current_balance = float(credit.get('current_balance', 0)) if 'current_balance' in credit else 0.0
-                except (ValueError, TypeError):
-                    current_balance = 0.0
+                
+                # Calculate actual balance from transactions instead of using stored balance
+                transactions_response = query_table('transactions', 
+                                                   filters=[('business_id', 'eq', business_id), 
+                                                           ('customer_id', 'eq', customer_id)])
+                transactions = transactions_response.data if transactions_response and transactions_response.data else []
+                
+                # Calculate totals the same way as customer details page
+                credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
+                payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
+                current_balance = credit_total - payment_total
+                
                 customer['current_balance'] = current_balance
                 customers.append(customer)
     
@@ -336,11 +359,39 @@ def business_customer_details(customer_id):
     if customer and credit:
         customer = {**customer, 'current_balance': credit.get('current_balance', 0)}
     
-    # Get transaction history
-    transactions_response = query_table('transactions', 
-                                       filters=[('business_id', 'eq', business_id), 
-                                               ('customer_id', 'eq', customer_id)])
-    transactions = transactions_response.data if transactions_response and transactions_response.data else []
+    # Get transaction history - Force fresh query from database
+    try:
+        # Use direct database query to ensure we get the latest transactions
+        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("""
+                SELECT * FROM transactions 
+                WHERE business_id = %s AND customer_id = %s 
+                ORDER BY created_at DESC
+            """, [business_id, customer_id])
+            
+            transactions_data = cursor.fetchall()
+            transactions = []
+            for tx in transactions_data:
+                transactions.append({
+                    'id': tx['id'],
+                    'amount': float(tx['amount']) if tx['amount'] else 0,
+                    'transaction_type': tx['transaction_type'],
+                    'notes': tx.get('notes', ''),
+                    'created_at': tx['created_at'],
+                    'created_by': tx.get('created_by', '')
+                })
+        conn.close()
+        
+        print(f"DEBUG: Found {len(transactions)} transactions for customer {customer_id}")
+        
+    except Exception as e:
+        print(f"Error fetching transactions: {str(e)}")
+        # Fallback to query_table method
+        transactions_response = query_table('transactions', 
+                                           filters=[('business_id', 'eq', business_id), 
+                                                   ('customer_id', 'eq', customer_id)])
+        transactions = transactions_response.data if transactions_response and transactions_response.data else []
     
     # Calculate totals
     credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
@@ -349,8 +400,16 @@ def business_customer_details(customer_id):
     # Calculate the actual balance that customer should give
     calculated_balance = credit_total - payment_total
     
-    # Sort transactions by date, newest first
-    transactions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    # Update the stored balance in customer_credits table to match calculated balance
+    try:
+        execute_query(
+            "UPDATE customer_credits SET current_balance = %s, updated_at = %s WHERE business_id = %s AND customer_id = %s",
+            [calculated_balance, get_ist_now().isoformat(), business_id, customer_id],
+            commit=True
+        )
+        print(f"DEBUG: Updated stored balance to {calculated_balance} for customer {customer_id}")
+    except Exception as e:
+        print(f"WARNING: Could not update stored balance: {str(e)}")
     
     return render_template('business/customer_details.html', 
                           customer=customer, 
@@ -382,17 +441,44 @@ def add_customer():
                 customer_id = existing_customer['id']
                 print(f"DEBUG: Found existing customer with ID: {customer_id}")
             else:
-                # Create new customer (but do NOT create a user account - that's only done during registration)
+                # Create new customer record
                 customer_id = str(uuid.uuid4())
                 customer_query = """
                     INSERT INTO customers (id, name, phone_number, created_at)
                     VALUES (%s, %s, %s, %s)
                     RETURNING id
                 """
-                result = execute_query(customer_query, [customer_id, name, phone, datetime.now().isoformat()], fetch_one=True)
+                result = execute_query(customer_query, [customer_id, name, phone, get_ist_now().isoformat()], fetch_one=True)
                 if not result:
                     raise Exception("Failed to create customer")
                 print(f"DEBUG: Created new customer with ID: {customer_id}")
+                
+                # Create customer user account with default password "devi123"
+                try:
+                    # Check if user account already exists for this phone number
+                    existing_user = execute_query("SELECT id FROM users WHERE phone_number = %s LIMIT 1", [phone], fetch_one=True)
+                    
+                    if not existing_user:
+                        user_id = str(uuid.uuid4())
+                        user_query = """
+                            INSERT INTO users (id, name, phone_number, user_type, password, created_at) 
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            RETURNING id
+                        """
+                        user_result = execute_query(user_query, [
+                            user_id, name, phone, 'customer', 'devi123', get_ist_now().isoformat()
+                        ], fetch_one=True)
+                        
+                        if user_result:
+                            print(f"DEBUG: Created customer user account for {phone} with password 'devi123'")
+                        else:
+                            print(f"WARNING: Failed to create user account for customer {phone}")
+                    else:
+                        print(f"DEBUG: User account already exists for phone {phone}")
+                        
+                except Exception as user_error:
+                    print(f"WARNING: Could not create user account for customer: {str(user_error)}")
+                    # Don't fail the whole operation if user creation fails
             
             # Check if credit relationship already exists
             existing_credit = execute_query(
@@ -411,11 +497,11 @@ def add_customer():
                 """
                 execute_query(credit_query, [
                     str(uuid.uuid4()), business_id, customer_id, 
-                    initial_balance, datetime.now().isoformat(), datetime.now().isoformat()
+                    initial_balance, get_ist_now().isoformat(), get_ist_now().isoformat()
                 ])
                 print(f"DEBUG: Created credit relationship for customer {customer_id} with business {business_id}")
             
-            flash('Customer added successfully!', 'success')
+            flash('Customer added successfully! Customer can now login with phone number and password: devi123', 'success')
             return redirect(url_for('business_customers'))
             
         except Exception as e:
@@ -457,7 +543,7 @@ def business_transactions(customer_id):
                 'amount': amount,
                 'transaction_type': transaction_type,
                 'notes': notes,
-                'created_at': datetime.now().isoformat(),
+                'created_at': get_ist_now().isoformat(),
                 'created_by': session.get('user_id')
             }
             
@@ -704,6 +790,52 @@ def all_transactions():
     except Exception as e:
         flash(f'Error loading transactions: {str(e)}', 'error')
         return redirect(url_for('business_dashboard'))
+
+@business_app.route('/sync_customer/<customer_id>')
+@login_required
+@business_required
+def sync_customer_data(customer_id):
+    """Manually sync customer transaction data"""
+    business_id = safe_uuid(session.get('business_id'))
+    customer_id = safe_uuid(customer_id)
+    
+    try:
+        # Force refresh all transaction data for this customer
+        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # Get all transactions for this customer-business relationship
+            cursor.execute("""
+                SELECT * FROM transactions 
+                WHERE business_id = %s AND customer_id = %s 
+                ORDER BY created_at DESC
+            """, [business_id, customer_id])
+            
+            transactions = cursor.fetchall()
+            
+            # Recalculate balance
+            credit_total = sum([float(t['amount']) for t in transactions if t['transaction_type'] == 'credit'])
+            payment_total = sum([float(t['amount']) for t in transactions if t['transaction_type'] == 'payment'])
+            new_balance = credit_total - payment_total
+            
+            # Update the stored balance
+            cursor.execute("""
+                UPDATE customer_credits 
+                SET current_balance = %s, updated_at = %s 
+                WHERE business_id = %s AND customer_id = %s
+            """, [new_balance, get_ist_now().isoformat(), business_id, customer_id])
+            
+            conn.commit()
+            
+        conn.close()
+        
+        flash(f'Customer data synced successfully! Found {len(transactions)} transactions. Balance: ₹{new_balance:.2f}', 'success')
+        print(f"DEBUG: Synced customer {customer_id} - {len(transactions)} transactions, balance: {new_balance}")
+        
+    except Exception as e:
+        print(f"Error syncing customer data: {str(e)}")
+        flash('Error syncing customer data. Please try again.', 'error')
+    
+    return redirect(url_for('business_customer_details', customer_id=customer_id))
 
 @business_app.route('/remind_customer/<customer_id>')
 @login_required

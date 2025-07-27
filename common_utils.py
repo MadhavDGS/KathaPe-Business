@@ -25,6 +25,14 @@ import base64
 import qrcode
 from PIL import Image
 
+# Helper function to get current time in IST
+def get_ist_now():
+    """Get current datetime in Indian Standard Time (UTC+5:30)"""
+    utc_now = datetime.utcnow()
+    ist_offset = timedelta(hours=5, minutes=30)
+    ist_now = utc_now + ist_offset
+    return ist_now
+
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -575,6 +583,8 @@ def format_datetime(value, format='%d %b %Y, %I:%M %p'):
         try:
             # Try to parse ISO format first
             dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            # If the datetime is already in IST (no timezone conversion needed)
+            # We'll assume stored times are now in IST after our update
             return dt.strftime(format)
         except:
             return value
