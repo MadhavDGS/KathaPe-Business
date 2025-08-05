@@ -160,8 +160,18 @@ def register():
                 """
                 execute_query(business_query, [business_id, user_id, f"{name}'s Business", 'My business account', access_pin, datetime.now().isoformat()])
                 
-                flash('Registration successful! Please login.', 'success')
-                return redirect(url_for('login'))
+                # Auto-login: Set session data (same as login function)
+                session['user_id'] = user_id
+                session['user_name'] = name
+                session['user_type'] = 'business'
+                session['phone_number'] = phone
+                session['business_id'] = business_id
+                session['business_name'] = f"{name}'s Business"
+                session['access_pin'] = access_pin
+                session.permanent = True
+                
+                flash('Registration successful! Welcome to your dashboard.', 'success')
+                return redirect(url_for('business_dashboard'))
             else:
                 flash('Registration failed. Please try again.', 'error')
                 
@@ -208,14 +218,17 @@ def business_dashboard():
                 cursor.execute("SELECT COUNT(*) FROM customer_credits WHERE business_id = %s", [business_id])
                 total_customers = cursor.fetchone()[0]
                 
-                # Get recent customers - calculate balance from transactions like in customers page
+                # Get recent customers - ordered by most recent transaction activity
                 cursor.execute("""
-                    SELECT c.id, c.name, c.phone_number
+                    SELECT c.id, c.name, c.phone_number, 
+                           MAX(t.created_at) as last_transaction_date
                     FROM customers c
                     JOIN customer_credits cc ON c.id = cc.customer_id
+                    LEFT JOIN transactions t ON c.id = t.customer_id AND t.business_id = %s
                     WHERE cc.business_id = %s
-                    ORDER BY cc.updated_at DESC
-                """, [business_id])
+                    GROUP BY c.id, c.name, c.phone_number
+                    ORDER BY last_transaction_date DESC NULLS LAST
+                """, [business_id, business_id])
                 
                 customers_data = cursor.fetchall()
                 for customer in customers_data:
@@ -233,13 +246,14 @@ def business_dashboard():
                     payment_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'payment'])
                     current_balance = credit_total - payment_total
                     
-                    # Only show customers with positive balance
-                    if current_balance > 0:
+                    # Show all customers with transactions (not just positive balance)
+                    if len(transactions_data) > 0:  # Only show customers who have transaction history
                         customers.append({
                             'id': customer['id'],
                             'name': customer['name'],
                             'phone_number': customer['phone_number'],
-                            'current_balance': current_balance
+                            'current_balance': current_balance,
+                            'last_transaction_date': customer['last_transaction_date']
                         })
                 
                 # Get recent transactions - increased to 15
@@ -263,11 +277,11 @@ def business_dashboard():
                         'customer_name': tx.get('customer_name', 'Unknown')
                     })
                 
-                # Calculate total outstanding - sum all customer balances calculated from transactions
-                total_outstanding = sum([customer['current_balance'] for customer in customers])
+                # Calculate total outstanding - sum all positive customer balances
+                total_outstanding = sum([customer['current_balance'] for customer in customers if customer['current_balance'] > 0])
                 
-                # Sort customers by balance and limit to top 5 for display
-                customers.sort(key=lambda x: x['current_balance'], reverse=True)
+                # Customers are already ordered by recent transaction activity from the query
+                # Limit to top 5 for display
                 customers = customers[:5]
                 
                 print(f"DEBUG: Business Dashboard Calculations:")
@@ -841,9 +855,187 @@ def sync_customer_data(customer_id):
 @login_required
 @business_required
 def remind_customer(customer_id):
-    """Basic reminder functionality - can be expanded later"""
-    flash('Reminder feature will be implemented soon!', 'info')
-    return redirect(url_for('business_customer_details', customer_id=customer_id))
+    """Send WhatsApp reminder to customer"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        customer_id = safe_uuid(customer_id)
+        
+        # Get business details
+        business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
+        business = business_response.data[0] if business_response and business_response.data else {}
+        
+        # Get customer details
+        customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
+        customer = customer_response.data[0] if customer_response and customer_response.data else {}
+        
+        # Get credit relationship for balance
+        credit_response = query_table('customer_credits', 
+                                   filters=[('business_id', 'eq', business_id), 
+                                           ('customer_id', 'eq', customer_id)])
+        credit = credit_response.data[0] if credit_response and credit_response.data else {}
+        
+        if not customer or not business:
+            flash('Customer or business not found', 'error')
+            return redirect(url_for('business_customers'))
+        
+        # Get current balance
+        balance = credit.get('current_balance', 0)
+        customer_name = customer.get('name', 'Customer')
+        business_name = business.get('name', 'Business')
+        phone_number = customer.get('phone_number', '')
+        
+        # Remove any non-digit characters from phone number
+        import re
+        clean_phone = re.sub(r'\D', '', phone_number)
+        
+        # Add country code if not present (assuming Indian numbers)
+        if clean_phone and not clean_phone.startswith('91'):
+            if clean_phone.startswith('0'):
+                clean_phone = '91' + clean_phone[1:]
+            elif len(clean_phone) == 10:
+                clean_phone = '91' + clean_phone
+        
+        if not clean_phone:
+            flash('Customer phone number not found or invalid', 'error')
+            return redirect(url_for('business_customer_details', customer_id=customer_id))
+        
+        # Generate reminder message based on your format
+        if balance > 0:
+            message = f"""Hello {customer_name},
+Just a gentle reminder about your outstanding balance of ₹{balance:,.2f} with us at {business_name}
+You can check your balance and history here: https://www.khatape.tech/business/{business_id}
+We'd appreciate it if you could pay soon!
+{business_name}"""
+        else:
+            message = f"""Hello {customer_name},
+Thank you for keeping your account up to date with {business_name}!
+Your current balance is ₹{balance:,.2f}
+You can check your balance and history here: https://www.khatape.tech/business/{business_id}
+We appreciate your business!
+{business_name}"""
+        
+        # Create WhatsApp URL
+        import urllib.parse
+        encoded_message = urllib.parse.quote(message)
+        whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
+        
+        # Log the reminder
+        logger.info(f"WhatsApp reminder generated for customer {customer_id}: {clean_phone}")
+        
+        # Redirect to WhatsApp
+        return redirect(whatsapp_url)
+        
+    except Exception as e:
+        logger.error(f"Error generating WhatsApp reminder: {str(e)}")
+        flash('Error generating reminder. Please try again.', 'error')
+        return redirect(url_for('business_customer_details', customer_id=customer_id))
+
+@business_app.route('/remind_all_customers')
+@login_required
+@business_required
+def remind_all_customers():
+    """Show page with all customers that need WhatsApp reminders"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        
+        # Get business details
+        business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
+        business = business_response.data[0] if business_response and business_response.data else {}
+        business_name = business.get('name', 'Business')
+        
+        # Get all customers with balances
+        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+        customers_to_remind = []
+        
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            # Get all customers with their phone numbers and balances
+            cursor.execute("""
+                SELECT c.id, c.name, c.phone_number
+                FROM customers c
+                JOIN customer_credits cc ON c.id = cc.customer_id
+                WHERE cc.business_id = %s AND c.phone_number IS NOT NULL AND c.phone_number != ''
+                ORDER BY c.name
+            """, [business_id])
+            
+            customers_data = cursor.fetchall()
+            
+            for customer in customers_data:
+                try:
+                    customer_id = customer['id']
+                    customer_name = customer.get('name', 'Customer')
+                    phone_number = customer.get('phone_number', '')
+                    
+                    # Calculate balance from transactions
+                    cursor.execute("""
+                        SELECT amount, transaction_type
+                        FROM transactions
+                        WHERE business_id = %s AND customer_id = %s
+                    """, [business_id, customer_id])
+                    
+                    transactions_data = cursor.fetchall()
+                    if not transactions_data:
+                        continue  # Skip customers with no transactions
+                    
+                    credit_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'credit'])
+                    payment_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'payment'])
+                    balance = credit_total - payment_total
+                    
+                    # Only include customers with positive balances
+                    if balance <= 0:
+                        continue
+                    
+                    # Clean phone number
+                    import re
+                    clean_phone = re.sub(r'\D', '', phone_number)
+                    
+                    # Add country code if not present (assuming Indian numbers)
+                    if clean_phone and not clean_phone.startswith('91'):
+                        if clean_phone.startswith('0'):
+                            clean_phone = '91' + clean_phone[1:]
+                        elif len(clean_phone) == 10:
+                            clean_phone = '91' + clean_phone
+                    
+                    if not clean_phone:
+                        continue
+                    
+                    # Generate reminder message
+                    message = f"""Hi {customer_name}! 🙏
+
+Your current balance with {business_name} is ₹{balance:,.2f}. 
+You can view your transaction history and make payments here: 
+https://www.khatape.tech/business/{business_id}
+
+Thank you for your business! 😊
+
+- {business_name} Team"""
+                    
+                    # Create WhatsApp URL
+                    import urllib.parse
+                    encoded_message = urllib.parse.quote(message)
+                    whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
+                    
+                    customers_to_remind.append({
+                        'id': customer_id,
+                        'name': customer_name,
+                        'phone': f"+{clean_phone}",
+                        'balance': f"{balance:,.2f}",
+                        'whatsapp_url': whatsapp_url
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error processing customer {customer.get('name', 'Unknown')}: {str(e)}")
+                    continue
+        
+        conn.close()
+        
+        return render_template('business/bulk_reminders.html', 
+                             customers=customers_to_remind,
+                             business=business)
+            
+    except Exception as e:
+        logger.error(f"Error generating bulk reminders: {str(e)}")
+        flash('Error loading reminder page. Please try again.', 'error')
+        return redirect(url_for('business_customers'))
 
 @business_app.errorhandler(404)
 def not_found_error(error):

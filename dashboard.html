@@ -75,7 +75,7 @@
                 <span class="pin">{{ business.access_pin }}</span>
                 <span class="pin-subtitle">Permanent identifier for your business</span>
             </div>
-          
+            
             <div class="qr-code-container">
                 <div class="qr-code">
                     <img src="{{ url_for('business_qr_image', business_id=business.id) }}" alt="Business QR Code" onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/placeholder_qr.png') }}';">
@@ -87,7 +87,7 @@
             </div>
         </div>
     </div>
-         
+
     <!-- Customers Section -->
     <div class="section-header">
         <h3>Your Customers</h3>

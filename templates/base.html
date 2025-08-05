@@ -21,35 +21,35 @@
             --border-radius: 14px;
             
             /* Light Theme Variables */
-            --text-color: #333;
-            --text-muted: #666;
-            --bg-color: #f5f8fa;
+            --text-color: #333333;
+            --text-muted: #666666;
+            --bg-color: #f8fafc;
             --card-bg: #ffffff;
-            --border-color: #eaeaea;
-            --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --border-color: #e2e8f0;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
             --header-bg: var(--primary-color);
             --header-text: #ffffff;
-            --footer-bg: #f7f7f7;
-            --footer-text: #888;
+            --footer-bg: #f7fafc;
+            --footer-text: #718096;
             --input-bg: #ffffff;
-            --input-border: #e0e0e0;
-            --input-text: #333;
+            --input-border: #d1d5db;
+            --input-text: #374151;
         }
         
         [data-theme="dark"] {
-            --text-color: #f0f0f0;
-            --text-muted: #a0a0a0;
-            --bg-color: #1a1f2e;
-            --card-bg: #252a3c;
+            --text-color: #f7fafc;
+            --text-muted: #a0aec0;
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
             --border-color: rgba(255, 255, 255, 0.1);
-            --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-            --header-bg: #252a3c;
-            --header-text: #ffffff;
-            --footer-bg: #1e1e1e;
-            --footer-text: #a0a0a0;
+            --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            --header-bg: #1e293b;
+            --header-text: #f7fafc;
+            --footer-bg: #0f172a;
+            --footer-text: #64748b;
             --input-bg: rgba(255, 255, 255, 0.05);
-            --input-border: rgba(255, 255, 255, 0.1);
-            --input-text: #ffffff;
+            --input-border: rgba(255, 255, 255, 0.2);
+            --input-text: #f7fafc;
         }
         
         * {
@@ -195,6 +195,22 @@
             font-weight: 500;
             display: flex;
             align-items: center;
+            position: relative;
+            transition: all 0.3s ease-out;
+        }
+        
+        .flash-message::after {
+            content: "✕";
+            position: absolute;
+            right: 14px;
+            opacity: 0.6;
+            font-size: 12px;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+        
+        .flash-message:hover::after {
+            opacity: 1;
         }
         
         .flash-message:before {
@@ -234,6 +250,52 @@
             content: "\f071"; /* exclamation-triangle */
         }
         
+        /* Flash message animations */
+        @keyframes slideUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+                max-height: 100px;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-20px);
+                max-height: 0;
+                padding-top: 0;
+                padding-bottom: 0;
+                margin-bottom: 0;
+            }
+        }
+        
+        .flash-message {
+            transition: all 0.3s ease-out;
+        }
+        
+        .flash-message:hover {
+            transform: translateX(5px);
+            opacity: 0.9;
+        }
+        
+        /* Flash message progress bar */
+        .flash-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 0 0 var(--border-radius) var(--border-radius);
+            overflow: hidden;
+        }
+        
+        .flash-progress-fill {
+            height: 100%;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            transition: width 5s linear;
+            border-radius: 0 0 var(--border-radius) var(--border-radius);
+        }
+        
         /* Footer */
         .footer {
             background-color: var(--footer-bg);
@@ -251,14 +313,14 @@
             left: 0;
             height: 100%;
             width: 100%;
-            background: linear-gradient(45deg, #5c67de15, #41e6a615, #5c67de15);
+            background: linear-gradient(45deg, #5c67de08, #41a0e608, #5c67de08);
             background-size: 400% 400%;
             animation: gradient 15s ease infinite;
             z-index: -1;
         }
         
         [data-theme="dark"] .animated-bg {
-            background: linear-gradient(45deg, #5c67de25, #9141e615, #5c67de25);
+            background: linear-gradient(45deg, #5c67de20, #41a0e615, #5c67de20);
         }
         
         @keyframes gradient {
@@ -378,9 +440,10 @@
         // Theme toggle functionality
         function toggleTheme() {
             const html = document.documentElement;
-            const currentTheme = html.getAttribute('data-theme');
+            const currentTheme = html.getAttribute('data-theme') || 'light';
             const newTheme = currentTheme === 'light' ? 'dark' : 'light';
             
+            // Set theme attribute
             html.setAttribute('data-theme', newTheme);
             
             // Toggle icons
@@ -390,11 +453,9 @@
             if (newTheme === 'dark') {
                 moonIcon.style.display = 'none';
                 sunIcon.style.display = 'block';
-                document.body.classList.add('dark-mode');
             } else {
                 moonIcon.style.display = 'block';
                 sunIcon.style.display = 'none';
-                document.body.classList.remove('dark-mode');
             }
             
             // Save preference to local storage
@@ -403,20 +464,58 @@
         
         // Apply saved theme on page load
         document.addEventListener('DOMContentLoaded', function() {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme) {
-                document.documentElement.setAttribute('data-theme', savedTheme);
-                
-                // Set correct icon
-                const moonIcon = document.querySelector('.theme-toggle .fa-moon');
-                const sunIcon = document.querySelector('.theme-toggle .fa-sun');
-                
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            
+            // Set the theme
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            // Set correct icon
+            const moonIcon = document.querySelector('.theme-toggle .fa-moon');
+            const sunIcon = document.querySelector('.theme-toggle .fa-sun');
+            
+            if (moonIcon && sunIcon) {
                 if (savedTheme === 'dark') {
                     moonIcon.style.display = 'none';
                     sunIcon.style.display = 'block';
-                    document.body.classList.add('dark-mode');
+                } else {
+                    moonIcon.style.display = 'block';
+                    sunIcon.style.display = 'none';
                 }
             }
+            
+            // Auto-hide flash messages after 5 seconds
+            const flashMessages = document.querySelectorAll('.flash-message');
+            flashMessages.forEach(function(message) {
+                // Add click to dismiss functionality
+                message.style.cursor = 'pointer';
+                message.title = 'Click to dismiss';
+                
+                // Create and add progress bar
+                const progressBar = document.createElement('div');
+                progressBar.className = 'flash-progress';
+                progressBar.innerHTML = '<div class="flash-progress-fill"></div>';
+                message.appendChild(progressBar);
+                
+                const progressFill = progressBar.querySelector('.flash-progress-fill');
+                
+                // Start progress animation
+                setTimeout(() => {
+                    progressFill.style.width = '0%';
+                }, 100);
+                
+                message.addEventListener('click', function() {
+                    message.style.animation = 'slideUp 0.3s ease-out';
+                    setTimeout(() => message.remove(), 300);
+                });
+                
+                // Auto-hide after 5 seconds
+                setTimeout(function() {
+                    if (message.parentNode) {
+                        message.style.animation = 'slideUp 0.3s ease-out';
+                        setTimeout(() => message.remove(), 300);
+                    }
+                }, 5000);
+            });
         });
         
         // Mobile navigation functionality

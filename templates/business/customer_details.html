@@ -37,9 +37,9 @@
         </div>
         
         <div class="action-buttons">
-            <a href="{{ url_for('remind_customer', customer_id=customer.get('id')) }}" class="action-button whatsapp">
+            <a href="{{ url_for('remind_customer', customer_id=customer.get('id')) }}" class="action-button whatsapp" target="_blank" title="Opens WhatsApp with pre-filled reminder message">
                 <i class="fab fa-whatsapp"></i>
-                <span>Send Reminder</span>
+                <span>WhatsApp Reminder</span>
             </a>
         </div>
     </div>

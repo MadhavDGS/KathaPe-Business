@@ -41,7 +41,7 @@
                         {{ customer.current_balance | currency }}
                     </div>
                     <div class="remind-action">
-                        <a href="{{ url_for('remind_customer', customer_id=customer.id) }}" class="remind-btn" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('remind_customer', customer_id=customer.id) }}" class="remind-btn" onclick="event.stopPropagation()" target="_blank" title="Send WhatsApp reminder">
                             <i class="fab fa-whatsapp"></i>
                         </a>
                     </div>
@@ -59,13 +59,8 @@
 {% endblock %}
 
 {% block inline_css %}
-:root {
-    --credit-color: #f00;
-    --payment-color: #008000;
-    --light-bg: #f0f4f8;
-    --card-bg: white;
-    --border-radius: 12px;
-    --box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+/* Customers page specific styles that respect the base theme */
+.customer-container {
     --spacing: 16px;
 }
 
