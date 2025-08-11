@@ -61,6 +61,17 @@
             <i class="fab fa-whatsapp"></i>
             <span>Send All Reminders</span>
         </a>
+        <a href="{{ url_for('pending_payments') }}" class="bulk-action-btn pending-payments-btn" title="View and approve pending PhonePe payments">
+            <i class="fas fa-clock"></i>
+            <span>Pending Payments</span>
+        </a>
+        <!-- Test button for development -->
+        <form method="POST" action="{{ url_for('test_pending_payment') }}" style="display: inline;">
+            <button type="submit" class="bulk-action-btn test-payment-btn" title="Create a test pending payment for development">
+                <i class="fas fa-vial"></i>
+                <span>Test Payment</span>
+            </button>
+        </form>
     </div>
 
     <!-- QR Code Section -->
@@ -380,7 +391,9 @@
 .bulk-actions {
     display: flex;
     justify-content: center;
+    gap: 15px;
     margin-bottom: var(--spacing);
+    flex-wrap: wrap;
 }
 
 .bulk-action-btn {
@@ -388,8 +401,6 @@
     align-items: center;
     justify-content: center;
     padding: 16px 24px;
-    background-color: var(--whatsapp);
-    color: white;
     border-radius: var(--border-radius);
     box-shadow: var(--box-shadow);
     text-decoration: none;
@@ -397,14 +408,42 @@
     transition: all 0.3s;
     border: none;
     cursor: pointer;
+    min-width: 200px;
+    flex: 1;
     max-width: 280px;
-    width: 100%;
 }
 
-.bulk-action-btn:hover {
+.remind-all-btn {
+    background-color: var(--whatsapp);
+    color: white;
+}
+
+.remind-all-btn:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(37, 211, 102, 0.3);
     background-color: #128C7E;
+}
+
+.pending-payments-btn {
+    background-color: #f39c12;
+    color: white;
+}
+
+.pending-payments-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(243, 156, 18, 0.3);
+    background-color: #e67e22;
+}
+
+.test-payment-btn {
+    background-color: #9b59b6;
+    color: white;
+}
+
+.test-payment-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(155, 89, 182, 0.3);
+    background-color: #8e44ad;
 }
 
 .bulk-action-btn i {
