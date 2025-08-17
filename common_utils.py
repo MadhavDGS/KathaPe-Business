@@ -1,7 +1,7 @@
 """
 Common utilities and configurations shared between customer and business Flask apps
 """
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, send_from_directory
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, send_from_directory, make_response
 import os
 import uuid
 import json

@@ -4,6 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}{% endblock %} - KathaPe</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#5c67de">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="KathaPe">
+    <meta name="description" content="Digital ledger and customer management for your business">
+    <meta name="keywords" content="business, ledger, customer, management, finance">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    
+    <!-- PWA Icons -->
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/icon-192.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='images/icon-192.png') }}">
+    <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='images/icon-512.png') }}">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -193,6 +210,63 @@
         .theme-toggle:hover {
             transform: scale(1.1);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+        
+        /* PWA Install Button */
+        .install-button {
+            position: fixed;
+            top: 580px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            z-index: 1001;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .install-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
+            background: linear-gradient(135deg, #218838, #1e9a8a);
+        }
+        
+        .install-button i {
+            font-size: 1.4rem;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .install-button.show {
+            display: flex;
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        [data-theme="dark"] .install-button {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+            box-shadow: 0 4px 15px rgba(23, 162, 184, 0.4);
+        }
+        
+        [data-theme="dark"] .install-button:hover {
+            background: linear-gradient(135deg, #138496, #117a8b);
+            box-shadow: 0 6px 20px rgba(23, 162, 184, 0.6);
         }
         
         /* Main container */
@@ -388,6 +462,7 @@
             
             .theme-toggle {
                 bottom: 20px;
+                top: auto;
                 right: 20px;
                 width: 60px;
                 height: 60px;
@@ -395,6 +470,18 @@
             
             .theme-toggle i {
                 font-size: 1.6rem;
+            }
+            
+            .install-button {
+                bottom: 100px;
+                top: auto;
+                right: 20px;
+                width: 60px;
+                height: 60px;
+            }
+            
+            .install-button i {
+                font-size: 1.5rem;
             }
         }
         
@@ -432,7 +519,12 @@
         </div>
     </header>
     
-    <div class="theme-toggle" onclick="toggleTheme()">
+    <!-- PWA Install Button -->
+    <div class="install-button" id="installButton" title="Install KathaPe as an app">
+        <i class="fas fa-download"></i>
+    </div>
+    
+    <div class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
         <i class="fas fa-moon"></i>
         <i class="fas fa-sun" style="display: none;"></i>
     </div>
@@ -593,6 +685,104 @@
                 });
             }
         });
+
+        // PWA Installation
+        let deferredPrompt;
+        const installButton = document.getElementById('installButton');
+
+        // Show install button initially for testing (even on HTTP)
+        // In production HTTPS, this will be controlled by beforeinstallprompt
+        if (location.protocol === 'http:') {
+            installButton.classList.add('show');
+            console.log('PWA: HTTP detected - showing install button for testing');
+        }
+
+        // Listen for the beforeinstallprompt event (HTTPS only)
+        window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('PWA: beforeinstallprompt event fired');
+            e.preventDefault();
+            deferredPrompt = e;
+            installButton.classList.add('show');
+        });
+
+        // Handle install button click
+        installButton.addEventListener('click', async () => {
+            if (location.protocol === 'http:') {
+                // For HTTP, show instructions to user
+                alert('📱 PWA Installation Instructions:\n\n' +
+                      '1. Open this app in Chrome/Edge\n' +
+                      '2. Click the menu (⋮) in browser\n' +
+                      '3. Select "Install KathaPe" or "Add to Home Screen"\n' +
+                      '4. Or use HTTPS for automatic install prompt\n\n' +
+                      'Note: PWA install works best with HTTPS');
+                return;
+            }
+
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                console.log(`PWA: User response to install prompt: ${outcome}`);
+                
+                if (outcome === 'accepted') {
+                    console.log('PWA: User accepted the install prompt');
+                } else {
+                    console.log('PWA: User dismissed the install prompt');
+                }
+                
+                // Reset the deferred prompt variable
+                deferredPrompt = null;
+                installButton.classList.remove('show');
+            } else {
+                // Fallback for browsers that don't support PWA install
+                alert('📱 To install this app:\n\n' +
+                      '1. Open browser menu\n' +
+                      '2. Look for "Install App" or "Add to Home Screen"\n' +
+                      '3. Follow the prompts');
+            }
+        });
+
+        // Listen for app installed event
+        window.addEventListener('appinstalled', (e) => {
+            console.log('PWA: App was installed');
+            installButton.classList.remove('show');
+            
+            // Optional: Show a success message
+            if (typeof showFlashMessage === 'function') {
+                showFlashMessage('App installed successfully!', 'success');
+            }
+        });
+
+        // Check if app is already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            console.log('PWA: App is running in standalone mode');
+            installButton.style.display = 'none';
+        }
+
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then((registration) => {
+                        console.log('SW: Service Worker registered successfully:', registration.scope);
+                        
+                        // Check for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            console.log('SW: New service worker found, installing...');
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('SW: New content is available, please refresh.');
+                                    // Optional: Show update available message
+                                }
+                            });
+                        });
+                    })
+                    .catch((error) => {
+                        console.log('SW: Service Worker registration failed:', error);
+                    });
+            });
+        }
     </script>
     
     {% block scripts %}{% endblock %}
