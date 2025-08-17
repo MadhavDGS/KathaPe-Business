@@ -907,11 +907,13 @@ def view_bill_image(transaction_id):
         business_id = safe_uuid(session.get('business_id'))
         transaction_id = safe_uuid(transaction_id)
         
+        print(f"DEBUG: View bill request for transaction {transaction_id}")
+        
         # Verify transaction belongs to the business
         conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
             cursor.execute("""
-                SELECT receipt_image_url, notes, amount, transaction_type, created_at,
+                SELECT t.receipt_image_url, t.notes, t.amount, t.transaction_type, t.created_at,
                        c.name as customer_name
                 FROM transactions t
                 LEFT JOIN customers c ON t.customer_id = c.id
@@ -923,8 +925,11 @@ def view_bill_image(transaction_id):
         conn.close()
         
         if not transaction:
+            print(f"DEBUG: Transaction {transaction_id} not found")
             flash('Transaction not found', 'error')
             return redirect(url_for('all_transactions'))
+        
+        print(f"DEBUG: Transaction found, has receipt_image_url: {bool(transaction.get('receipt_image_url'))}")
         
         transaction_data = {
             'id': transaction_id,
@@ -936,6 +941,7 @@ def view_bill_image(transaction_id):
             'customer_name': transaction.get('customer_name', 'Unknown')
         }
         
+        print(f"DEBUG: Rendering view_bill template for transaction {transaction_id}")
         return render_template('business/view_bill.html', transaction=transaction_data)
         
     except Exception as e:

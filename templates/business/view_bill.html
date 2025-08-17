@@ -1,26 +1,5 @@
 {% extends "base.html" %}
 
-{% block t    <div class="bill-content">
-        {% if transaction.receipt_image_url %}
-            <div class="bill-image-container">
-                <h3>Bill/Receipt Image</h3>
-                <div class="image-wrapper">
-                    <img src="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
-                         alt="Bill/Receipt for transaction" 
-                         class="bill-image"
-                         onclick="openImageModal('{{ url_for('bill_image', transaction_id=transaction.id) }}')"
-                         onerror="this.parentElement.innerHTML='<p>Error loading bill image</p>';">
-                </div>
-                <p class="image-hint">Click on the image to view full size</p>
-            </div>
-        {% else %}
-            <div class="no-bill-message">
-                <i class="fas fa-receipt"></i>
-                <p>No bill/receipt image available for this transaction</p>
-            </div>
-        {% endif %}
-    </div>{{ transaction.customer_name }}{% endblock %}
-
 {% block header_title %}View Bill{% endblock %}
 
 {% block content %}
