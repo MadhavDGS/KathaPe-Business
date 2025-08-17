@@ -101,6 +101,27 @@
             color: var(--header-text);
             font-size: 1.5rem;
             cursor: pointer;
+            padding: 8px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            min-width: 44px;
+            min-height: 44px;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on iOS */
+        }
+        
+        .nav-toggle:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .nav-toggle:active {
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: scale(0.95);
+        }
+        
+        .nav-toggle.active {
+            background-color: rgba(255, 255, 255, 0.15);
         }
         
         .nav-links {
@@ -332,7 +353,7 @@
         /* Responsive styles */
         @media (max-width: 768px) {
             .nav-toggle {
-                display: block;
+                display: flex !important;
             }
             
             .nav-links {
@@ -518,20 +539,58 @@
             });
         });
         
-        // Mobile navigation functionality
-        const navToggle = document.getElementById('navToggle');
-        const navLinks = document.getElementById('navLinks');
-        
-        navToggle.addEventListener('click', () => {
-            navLinks.classList.toggle('active');
-        });
-        
-        // Close mobile menu when clicking outside
-        document.addEventListener('click', (e) => {
-            if (navLinks.classList.contains('active') && 
-                !navLinks.contains(e.target) && 
-                e.target !== navToggle) {
-                navLinks.classList.remove('active');
+        // Mobile navigation functionality - Enhanced for reliability
+        document.addEventListener('DOMContentLoaded', function() {
+            const navToggle = document.getElementById('navToggle');
+            const navLinks = document.getElementById('navLinks');
+            
+            if (navToggle && navLinks) {
+                // Hamburger toggle click event with proper event handling
+                navToggle.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Toggle the active class
+                    navLinks.classList.toggle('active');
+                    navToggle.classList.toggle('active');
+                });
+                
+                // Also handle touch events for mobile devices
+                navToggle.addEventListener('touchend', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // Toggle the active class
+                    navLinks.classList.toggle('active');
+                    navToggle.classList.toggle('active');
+                });
+                
+                // Close mobile menu when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (navLinks.classList.contains('active') && 
+                        !navLinks.contains(e.target) && 
+                        !navToggle.contains(e.target)) {
+                        navLinks.classList.remove('active');
+                        navToggle.classList.remove('active');
+                    }
+                });
+                
+                // Close menu when clicking on nav links
+                const navLinkItems = navLinks.querySelectorAll('a');
+                navLinkItems.forEach(function(link) {
+                    link.addEventListener('click', function() {
+                        navLinks.classList.remove('active');
+                        navToggle.classList.remove('active');
+                    });
+                });
+                
+                // Close menu when window is resized to desktop view
+                window.addEventListener('resize', function() {
+                    if (window.innerWidth > 768) {
+                        navLinks.classList.remove('active');
+                        navToggle.classList.remove('active');
+                    }
+                });
             }
         });
     </script>
