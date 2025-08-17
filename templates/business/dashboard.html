@@ -61,17 +61,7 @@
             <i class="fab fa-whatsapp"></i>
             <span>Send All Reminders</span>
         </a>
-        <a href="{{ url_for('pending_payments') }}" class="bulk-action-btn pending-payments-btn" title="View and approve pending PhonePe payments">
-            <i class="fas fa-clock"></i>
-            <span>Pending Payments</span>
-        </a>
-        <!-- Test button for development -->
-        <form method="POST" action="{{ url_for('test_pending_payment') }}" style="display: inline;">
-            <button type="submit" class="bulk-action-btn test-payment-btn" title="Create a test pending payment for development">
-                <i class="fas fa-vial"></i>
-                <span>Test Payment</span>
-            </button>
-        </form>
+
     </div>
 
     <!-- QR Code Section -->
