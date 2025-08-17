@@ -1,7 +1,7 @@
-# PWA (Progressive Web App) Implementation for KathaPe Business
+# PWA (Progressive Web App) Implementation for Khatape Business
 
 ## 🎯 Overview
-KathaPe Business has been successfully converted into a Progressive Web App (PWA), allowing users to install and use it like a native mobile app.
+Khatape Business has been successfully converted into a Progressive Web App (PWA), allowing users to install and use it like a native mobile app.
 
 ## ✨ Features Added
 
@@ -10,7 +10,7 @@ KathaPe Business has been successfully converted into a Progressive Web App (PWA
 - **Position**: top: 580px (desktop), bottom: 100px (mobile)
 - **Icon**: Download icon (📥)
 - **Color**: Green gradient (#28a745 to #20c997)
-- **Tooltip**: "Install KathaPe as an app"
+- **Tooltip**: "Install Khatape as an app"
 - **Behavior**: 
   - Shows automatically on HTTP for testing
   - Shows when PWA install is available (HTTPS)
@@ -22,8 +22,8 @@ KathaPe Business has been successfully converted into a Progressive Web App (PWA
 - **Tooltip**: "Toggle light/dark theme"
 
 ### 3. **Web App Manifest** (`/static/manifest.json`)
-- App name: "KathaPe Business"
-- Short name: "KathaPe"
+- App name: "Khatape Business"
+- Short name: "Khatape"
 - Standalone display mode
 - Theme color: #5c67de
 - Icons: 192x192 and 512x512 PNG files
@@ -165,4 +165,4 @@ To test your PWA implementation:
 3. **Theme Test**: Switch between light/dark themes and verify install button adapts
 4. **Mobile Test**: Open on mobile device and test installation process
 
-Your KathaPe Business app is now ready for modern web and mobile experiences! 🎉
+Your Khatape Business app is now ready for modern web and mobile experiences! 🎉

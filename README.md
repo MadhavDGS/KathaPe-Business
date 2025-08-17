@@ -1,4 +1,4 @@
-# KathaPe Business App
+# Khatape Business App
 
 A Flask-based business management application for handling customer credits and transactions.
 

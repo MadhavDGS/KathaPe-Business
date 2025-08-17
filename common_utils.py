@@ -102,7 +102,7 @@ class RequestLoggerMiddleware:
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Error - KathaPe</title>
+                <title>Error - Khatape</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <style>
                     body {{ font-family: Arial, sans-serif; text-align: center; padding: 20px; }}
@@ -549,7 +549,7 @@ def generate_business_qr_code(business_id, access_pin):
         return "static/images/placeholder_qr.png"
 
 # Create Flask app with common configuration
-def create_app(app_name='KathaPe'):
+def create_app(app_name='Khatape'):
     # Load environment variables
     load_dotenv()
     

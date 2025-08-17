@@ -4,7 +4,7 @@ Business Flask Application - Handles all business-related operations
 from common_utils import *
 
 # Create the business Flask app
-business_app = create_app('KathaPe-Business')
+business_app = create_app('Khatape-Business')
 
 @business_app.template_filter('datetime')
 def datetime_filter(value, format='%d %b %Y, %I:%M %p'):

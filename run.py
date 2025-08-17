@@ -12,7 +12,7 @@ sys.path.append(os.path.join(parent_dir, 'shared'))
 from app import business_app
 
 if __name__ == '__main__':
-    print("Starting KathaPe Business Application...")
+    print("Starting Khatape Business Application...")
     print("Business app will be available at: http://localhost:5001")
     print("Press Ctrl+C to stop the application")
     

@@ -1,6 +1,6 @@
--- KathaPe Business Application Database Schema
+-- Khatape Business Application Database Schema
 -- PostgreSQL Database Creation Script
--- This file contains all the necessary tables and indexes for the KathaPe Business application
+-- This file contains all the necessary tables and indexes for the Khatape Business application
 
 -- Drop existing tables (if you want to recreate from scratch)
 -- Uncomment the lines below if you want to drop existing tables
@@ -339,4 +339,4 @@ COMMIT;
 -- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO your_app_user;
 
 -- Database setup complete!
--- You can now connect your KathaPe Business application to this database.
+-- You can now connect your Khatape Business application to this database.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Database Setup Script for KathaPe Business Application
-This script helps you set up a new PostgreSQL database for the KathaPe Business app.
+Database Setup Script for Khatape Business Application
+This script helps you set up a new PostgreSQL database for the Khatape Business app.
 """
 
 import os
@@ -46,7 +46,7 @@ def execute_sql_script(conn, sql_content):
 def update_env_file(db_url):
     """Update .env file with new database URL"""
     try:
-        env_content = f"""# KathaPe Business Application Environment Variables
+        env_content = f"""# Khatape Business Application Environment Variables
 DATABASE_URL={db_url}
 EXTERNAL_DATABASE_URL={db_url}
 
@@ -65,7 +65,7 @@ EXTERNAL_DATABASE_URL={db_url}
         print(f"⚠️  Warning: Could not create .env file: {e}")
 
 def main():
-    print("🗄️  KathaPe Business Database Setup")
+    print("🗄️  Khatape Business Database Setup")
     print("=" * 50)
     
     # Check if schema file exists

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kathape-business-v1';
+const CACHE_NAME = 'khatape-business-v1';
 const STATIC_CACHE_URLS = [
     '/',
     '/static/css/style.css',
