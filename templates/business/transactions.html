@@ -28,9 +28,23 @@
                         {% if transaction.notes %}
                             <div class="transaction-notes">{{ transaction.notes }}</div>
                         {% endif %}
+                        {% if transaction.receipt_image_url %}
+                            <div class="transaction-bill-indicator">
+                                <i class="fas fa-receipt"></i> Bill Available
+                            </div>
+                        {% endif %}
                     </div>
-                    <div class="transaction-amount {{ transaction.transaction_type }}">
-                        {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}{{ transaction.amount | currency }}
+                    <div class="transaction-right">
+                        <div class="transaction-amount {{ transaction.transaction_type }}">
+                            {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}{{ transaction.amount | currency }}
+                        </div>
+                        {% if transaction.receipt_image_url %}
+                            <a href="{{ url_for('view_bill_image', transaction_id=transaction.id) }}" 
+                               class="view-bill-btn" 
+                               title="View Bill/Receipt">
+                                <i class="fas fa-eye"></i> View Bill
+                            </a>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}
@@ -183,11 +197,58 @@ body {
     margin-top: 4px;
 }
 
+.transaction-bill-indicator {
+    font-size: 11px;
+    color: var(--secondary-color);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.transaction-bill-indicator i {
+    font-size: 10px;
+}
+
+.transaction-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
 .transaction-amount {
     font-weight: 600;
     font-size: 18px;
     text-align: right;
     min-width: 120px;
+}
+
+.view-bill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: linear-gradient(135deg, var(--secondary-color), #20c997);
+    color: white;
+    text-decoration: none;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(46, 204, 113, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.view-bill-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(46, 204, 113, 0.4);
+    background: linear-gradient(135deg, #20c997, var(--secondary-color));
+}
+
+.view-bill-btn i {
+    font-size: 10px;
 }
 
 .transaction-amount.credit {
@@ -327,6 +388,68 @@ body {
     .transaction-amount {
         font-size: 15px;
         min-width: 90px;
+    }
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(92, 103, 222, 0.4);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .transactions-container {
+        padding: 15px 10px 40px;
+    }
+    
+    .transaction-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+        padding: 16px;
+    }
+    
+    .transaction-icon {
+        width: 36px;
+        height: 36px;
+        margin-right: 0;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+    
+    .transaction-info {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .transaction-right {
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .transaction-amount {
+        min-width: auto;
+        font-size: 16px;
+    }
+    
+    .view-bill-btn {
+        font-size: 10px;
+        padding: 5px 10px;
+    }
+    
+    .transaction-bill-indicator {
+        font-size: 10px;
+    }
+    
+    .pagination {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+    
+    .pagination-btn {
+        min-width: 120px;
+        justify-content: center;
     }
 }
 {% endblock %}

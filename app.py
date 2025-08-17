@@ -2,9 +2,88 @@
 Business Flask Application - Handles all business-related operations
 """
 from common_utils import *
+import base64
+from flask import Response
 
 # Create the business Flask app
 business_app = create_app('Khatape-Business')
+
+@business_app.route('/bill_image/<transaction_id>')
+@login_required
+@business_required
+def bill_image(transaction_id):
+    """Serve bill image from base64 string in receipt_image_url column"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        transaction_id = safe_uuid(transaction_id)
+        
+        # Get the base64 image data from database
+        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("""
+                SELECT receipt_image_url FROM transactions 
+                WHERE id = %s AND business_id = %s
+            """, [transaction_id, business_id])
+            result = cursor.fetchone()
+        conn.close()
+        
+        if not result or not result['receipt_image_url']:
+            return Response("Bill image not found", status=404)
+        
+        img_data = result['receipt_image_url']
+        
+        # Handle data URL format (data:image/jpeg;base64,...)
+        if img_data.startswith('data:image/'):
+            # Remove data URL prefix if present
+            header, img_data = img_data.split(',', 1)
+            if 'jpeg' in header or 'jpg' in header:
+                mime_type = 'image/jpeg'
+            elif 'png' in header:
+                mime_type = 'image/png'
+            elif 'webp' in header:
+                mime_type = 'image/webp'
+            else:
+                mime_type = 'image/jpeg'  # Default fallback
+        else:
+            # Assume it's just base64 data without prefix
+            mime_type = 'image/jpeg'  # Default to JPEG
+        
+        try:
+            # Decode base64 string to bytes
+            image_bytes = base64.b64decode(img_data)
+            return Response(image_bytes, mimetype=mime_type)
+        except Exception as decode_error:
+            print(f"Error decoding base64 image: {str(decode_error)}")
+            return Response("Invalid image data", status=415)
+            
+    except Exception as e:
+        print(f"Error serving bill image: {str(e)}")
+        return Response("Server error", status=500)
+        conn.close()
+        if not result or not result['receipt_image_url']:
+            return Response(status=404)
+        # Try to detect image type
+        img_data = result['receipt_image_url']
+        if img_data.startswith('data:image/'):
+            # Remove data URL prefix if present
+            header, img_data = img_data.split(',', 1)
+            if 'jpeg' in header:
+                mime = 'image/jpeg'
+            elif 'png' in header:
+                mime = 'image/png'
+            else:
+                mime = 'application/octet-stream'
+        else:
+            # Default to jpeg
+            mime = 'image/jpeg'
+        try:
+            image_bytes = base64.b64decode(img_data)
+        except Exception:
+            return Response(status=415)
+        return Response(image_bytes, mimetype=mime)
+    except Exception as e:
+        print(f"Error serving bill image: {str(e)}")
+        return Response(status=500)
 
 @business_app.template_filter('datetime')
 def datetime_filter(value, format='%d %b %Y, %I:%M %p'):
@@ -393,7 +472,8 @@ def business_customer_details(customer_id):
                     'transaction_type': tx['transaction_type'],
                     'notes': tx.get('notes', ''),
                     'created_at': tx['created_at'],
-                    'created_by': tx.get('created_by', '')
+                    'created_by': tx.get('created_by', ''),
+                    'receipt_image_url': tx.get('receipt_image_url', '')
                 })
         conn.close()
         
@@ -791,7 +871,8 @@ def all_transactions():
                         'transaction_type': tx['transaction_type'],
                         'notes': tx.get('notes', ''),
                         'created_at': tx['created_at'],
-                        'customer_name': tx.get('customer_name', 'Unknown')
+                        'customer_name': tx.get('customer_name', 'Unknown'),
+                        'receipt_image_url': tx.get('receipt_image_url', '')
                     })
             
             conn.close()
@@ -816,6 +897,50 @@ def all_transactions():
     except Exception as e:
         flash(f'Error loading transactions: {str(e)}', 'error')
         return redirect(url_for('business_dashboard'))
+
+@business_app.route('/view_bill/<transaction_id>')
+@login_required
+@business_required
+def view_bill_image(transaction_id):
+    """View bill/receipt image for a transaction"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        transaction_id = safe_uuid(transaction_id)
+        
+        # Verify transaction belongs to the business
+        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("""
+                SELECT receipt_image_url, notes, amount, transaction_type, created_at,
+                       c.name as customer_name
+                FROM transactions t
+                LEFT JOIN customers c ON t.customer_id = c.id
+                WHERE t.id = %s AND t.business_id = %s
+            """, [transaction_id, business_id])
+            
+            transaction = cursor.fetchone()
+        
+        conn.close()
+        
+        if not transaction:
+            flash('Transaction not found', 'error')
+            return redirect(url_for('all_transactions'))
+        
+        transaction_data = {
+            'id': transaction_id,
+            'receipt_image_url': transaction.get('receipt_image_url', ''),
+            'notes': transaction.get('notes', ''),
+            'amount': float(transaction['amount']) if transaction['amount'] else 0,
+            'transaction_type': transaction['transaction_type'],
+            'created_at': transaction['created_at'],
+            'customer_name': transaction.get('customer_name', 'Unknown')
+        }
+        
+        return render_template('business/view_bill.html', transaction=transaction_data)
+        
+    except Exception as e:
+        flash(f'Error loading bill: {str(e)}', 'error')
+        return redirect(url_for('all_transactions'))
 
 @business_app.route('/sync_customer/<customer_id>')
 @login_required

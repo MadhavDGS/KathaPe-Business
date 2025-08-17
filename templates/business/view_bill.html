@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block t    <div class="bill-content">
+        {% if transaction.receipt_image_url %}
+            <div class="bill-image-container">
+                <h3>Bill/Receipt Image</h3>
+                <div class="image-wrapper">
+                    <img src="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
+                         alt="Bill/Receipt for transaction" 
+                         class="bill-image"
+                         onclick="openImageModal('{{ url_for('bill_image', transaction_id=transaction.id) }}')"
+                         onerror="this.parentElement.innerHTML='<p>Error loading bill image</p>';">
+                </div>
+                <p class="image-hint">Click on the image to view full size</p>
+            </div>
+        {% else %}
+            <div class="no-bill-message">
+                <i class="fas fa-receipt"></i>
+                <p>No bill/receipt image available for this transaction</p>
+            </div>
+        {% endif %}
+    </div>{{ transaction.customer_name }}{% endblock %}
+
+{% block header_title %}View Bill{% endblock %}
+
+{% block content %}
+<div class="view-bill-container">
+    <div class="bill-header">
+        <h2>Transaction Bill</h2>
+        <div class="transaction-details">
+            <div class="detail-item">
+                <strong>Customer:</strong> {{ transaction.customer_name }}
+            </div>
+            <div class="detail-item">
+                <strong>Amount:</strong> 
+                <span class="amount {{ transaction.transaction_type }}">
+                    {% if transaction.transaction_type == 'credit' %}+{% else %}-{% endif %}{{ transaction.amount | currency }}
+                </span>
+            </div>
+            <div class="detail-item">
+                <strong>Type:</strong> 
+                <span class="transaction-type {{ transaction.transaction_type }}">
+                    {{ transaction.transaction_type.title() }}
+                </span>
+            </div>
+            <div class="detail-item">
+                <strong>Date:</strong> {{ transaction.created_at | datetime }}
+            </div>
+            {% if transaction.notes %}
+            <div class="detail-item">
+                <strong>Notes:</strong> {{ transaction.notes }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="bill-content">
+        {% if transaction.receipt_image_url %}
+            <div class="bill-image-container">
+                <h3>Bill/Receipt Image</h3>
+                <div class="image-wrapper">
+                    <img src="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
+                         alt="Bill/Receipt for transaction" 
+                         class="bill-image"
+                         onclick="openImageModal(this.src)">
+                </div>
+                <p class="image-hint">Click on the image to view full size</p>
+            </div>
+        {% else %}
+            <div class="no-bill-message">
+                <i class="fas fa-receipt"></i>
+                <p>No bill/receipt image available for this transaction</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="bill-actions">
+        <a href="{{ url_for('all_transactions') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Transactions
+        </a>
+        {% if transaction.receipt_image_url %}
+        <a href="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
+           target="_blank" 
+           class="btn btn-primary">
+            <i class="fas fa-external-link-alt"></i> Open in New Tab
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Image Modal -->
+<div id="imageModal" class="image-modal" onclick="closeImageModal()">
+    <span class="close-modal" onclick="closeImageModal()">&times;</span>
+    <img class="modal-image" id="modalImage">
+    <div class="modal-caption">
+        <p>Bill/Receipt Image - Click outside to close</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block inline_css %}
+.view-bill-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.bill-header {
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: var(--box-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bill-header h2 {
+    margin: 0 0 20px;
+    color: var(--primary-color);
+    font-size: 28px;
+    text-align: center;
+}
+
+.transaction-details {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-item strong {
+    color: var(--text-color);
+    min-width: 80px;
+}
+
+.amount.credit {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.amount.payment {
+    color: #2ecc71;
+    font-weight: bold;
+}
+
+.transaction-type.credit {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.transaction-type.payment {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.bill-content {
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: var(--box-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bill-content h3 {
+    margin: 0 0 20px;
+    color: var(--primary-color);
+    text-align: center;
+}
+
+.bill-image-container {
+    text-align: center;
+}
+
+.image-wrapper {
+    display: inline-block;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    max-width: 100%;
+}
+
+.bill-image {
+    max-width: 100%;
+    height: auto;
+    max-height: 600px;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+    display: block;
+}
+
+.bill-image:hover {
+    transform: scale(1.02);
+}
+
+.image-hint {
+    margin: 15px 0 0;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.no-bill-message {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px 20px;
+}
+
+.no-bill-message i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    opacity: 0.6;
+}
+
+.no-bill-message p {
+    font-size: 16px;
+    margin: 0;
+}
+
+.bill-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 12px 20px;
+    border-radius: var(--border-radius);
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+/* Image Modal */
+.image-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    cursor: pointer;
+}
+
+.modal-image {
+    display: block;
+    margin: auto;
+    max-width: 90%;
+    max-height: 90%;
+    margin-top: 5%;
+    border-radius: var(--border-radius);
+}
+
+.close-modal {
+    position: absolute;
+    top: 20px;
+    right: 35px;
+    color: #f1f1f1;
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 1001;
+}
+
+.close-modal:hover {
+    color: #ccc;
+}
+
+.modal-caption {
+    text-align: center;
+    color: #ccc;
+    padding: 20px;
+    font-size: 16px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .view-bill-container {
+        padding: 15px;
+    }
+    
+    .bill-header,
+    .bill-content {
+        padding: 20px;
+    }
+    
+    .detail-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+    
+    .bill-actions {
+        flex-direction: column;
+    }
+    
+    .btn {
+        text-align: center;
+        justify-content: center;
+    }
+    
+    .close-modal {
+        top: 10px;
+        right: 25px;
+        font-size: 30px;
+    }
+}
+{% endblock %}
+
+{% block inline_js %}
+function openImageModal(src) {
+    const modal = document.getElementById('imageModal');
+    const modalImg = document.getElementById('modalImage');
+    modal.style.display = 'block';
+    modalImg.src = src;
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImageModal() {
+    const modal = document.getElementById('imageModal');
+    modal.style.display = 'none';
+    
+    // Restore body scroll
+    document.body.style.overflow = 'auto';
+}
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeImageModal();
+    }
+});
+{% endblock %}

@@ -64,28 +64,41 @@
                             <i class="fas fa-arrow-down"></i>
                         {% endif %}
                     </div>
-                    {% if transaction.get('notes') %}
-                        <div class="transaction-notes">
-                            {{ transaction.get('notes', '') }}
+                    <div class="transaction-info">
+                        {% if transaction.get('notes') %}
+                            <div class="transaction-notes">
+                                {{ transaction.get('notes', '') }}
+                            </div>
+                        {% endif %}
+                        <div class="transaction-date">
+                            {{ transaction.get('created_at', '')|datetime }}
                         </div>
-                    {% endif %}
-                    <div class="transaction-date">
-                        {{ transaction.get('created_at', '')|datetime }}
-                    </div>
-                    <div class="transaction-amount {% if transaction.get('transaction_type') == 'credit' %}credit{% else %}payment{% endif %}">
-                        {% if transaction.get('transaction_type') == 'credit' %}
-                            +{{ transaction.get('amount', 0) | currency }}
-                        {% else %}
-                            -{{ transaction.get('amount', 0) | currency }}
+                        {% if transaction.get('receipt_image_url') or transaction.get('media_url') %}
+                            <div class="transaction-bill-indicator">
+                                <i class="fas fa-receipt"></i> Bill Available
+                            </div>
                         {% endif %}
                     </div>
-                    {% if transaction.get('media_url') %}
-                        <div class="transaction-receipt">
-                            <a href="{{ transaction.get('media_url') }}" target="_blank" class="receipt-link">
-                                <i class="fas fa-receipt"></i>
-                            </a>
+                    <div class="transaction-right">
+                        <div class="transaction-amount {% if transaction.get('transaction_type') == 'credit' %}credit{% else %}payment{% endif %}">
+                            {% if transaction.get('transaction_type') == 'credit' %}
+                                +{{ transaction.get('amount', 0) | currency }}
+                            {% else %}
+                                -{{ transaction.get('amount', 0) | currency }}
+                            {% endif %}
                         </div>
-                    {% endif %}
+                        {% if transaction.get('receipt_image_url') %}
+                            <a href="{{ url_for('view_bill_image', transaction_id=transaction.get('id')) }}" 
+                               class="view-bill-btn" 
+                               title="View Bill/Receipt">
+                                <i class="fas fa-eye"></i> View Bill
+                            </a>
+                        {% elif transaction.get('media_url') %}
+                            <a href="{{ transaction.get('media_url') }}" target="_blank" class="view-bill-btn receipt-link">
+                                <i class="fas fa-external-link-alt"></i> View Receipt
+                            </a>
+                        {% endif %}
+                    </div>
                 </div>
             {% endfor %}
         {% else %}
@@ -272,22 +285,44 @@
     color: var(--payment-color);
 }
 
-.transaction-notes {
+.transaction-info {
     flex: 1;
+}
+
+.transaction-notes {
     font-size: 0.95rem;
     color: var(--text-color);
+    margin-bottom: 4px;
 }
 
 .transaction-date {
     font-size: 0.85rem;
     color: var(--text-muted);
-    margin-right: 15px;
+}
+
+.transaction-bill-indicator {
+    font-size: 0.75rem;
+    color: var(--secondary-color);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.transaction-bill-indicator i {
+    font-size: 0.7rem;
+}
+
+.transaction-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
 }
 
 .transaction-amount {
     font-weight: 600;
     font-size: 1.1rem;
-    margin-right: 10px;
 }
 
 .transaction-amount.credit {
@@ -296,6 +331,33 @@
 
 .transaction-amount.payment {
     color: var(--payment-color);
+}
+
+.view-bill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: linear-gradient(135deg, var(--secondary-color), #20c997);
+    color: white;
+    text-decoration: none;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 6px rgba(46, 204, 113, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.view-bill-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(46, 204, 113, 0.4);
+    background: linear-gradient(135deg, #20c997, var(--secondary-color));
+}
+
+.view-bill-btn i {
+    font-size: 0.7rem;
 }
 
 .transaction-receipt {
