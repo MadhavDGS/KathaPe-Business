@@ -341,49 +341,7 @@ def query_table(collection_name, query_type='select', fields='*', filters=None, 
                 self.data = data or []
         
         return Response([])
-                        
-                    if op == 'eq':
-                        where_conditions.append(f"{field} = %s")
-                        params.append(value)
-                    # Add other operators as needed
-                
-                if where_conditions:
-                    query += " WHERE " + " AND ".join(where_conditions)
-            
-            query += " RETURNING *"
-            
-            # Execute query
-            result = execute_query(query, params, commit=True)
-            
-            # Create a response class to match Supabase's structure
-            class Response:
-                def __init__(self, data):
-                    self.data = data or []
-            
-            return Response(result)
-            
-        else:
-            print(f"ERROR: Invalid query type: {query_type}")
-            
-            # Create an empty response class to use as fallback
-            class Response:
-                def __init__(self):
-                    self.data = []
-            
-            return Response()
-        
-    except Exception as e:
-        print(f"Database query error: {str(e)}")
-        traceback.print_exc()
-        
-        # Create an empty response class to use as fallback
-        class Response:
-            def __init__(self):
-                self.data = []
-        
-        return Response()
-
-# File upload helper function
+        # File upload helper function
 def allowed_file(filename):
     """Check if a file has an allowed extension"""
     allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
