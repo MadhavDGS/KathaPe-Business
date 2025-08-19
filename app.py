@@ -17,20 +17,20 @@ def bill_image(transaction_id):
         business_id = safe_uuid(session.get('business_id'))
         transaction_id = safe_uuid(transaction_id)
         
-        # Get the base64 image data from database
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute("""
-                SELECT receipt_image_url FROM transactions 
-                WHERE id = %s AND business_id = %s
-            """, [transaction_id, business_id])
-            result = cursor.fetchone()
-        conn.close()
+        # Get the base64 image data from Appwrite
+        from appwrite_utils import db
         
-        if not result or not result['receipt_image_url']:
+        # Get transaction document
+        transaction = db.get_document('transactions', transaction_id)
+        
+        if not transaction or transaction.get('business_id') != business_id:
             return Response("Bill image not found", status=404)
         
-        img_data = result['receipt_image_url']
+        receipt_image_url = transaction.get('receipt_image_url')
+        if not receipt_image_url:
+            return Response("Bill image not found", status=404)
+        
+        img_data = receipt_image_url
         
         # Handle data URL format (data:image/jpeg;base64,...)
         if img_data.startswith('data:image/'):
