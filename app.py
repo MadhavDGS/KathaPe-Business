@@ -25,7 +25,6 @@ def bill_image(transaction_id):
         transaction_id = safe_uuid(transaction_id)
         
         # Get the base64 image data from Appwrite
-<<<<<<< HEAD
         from appwrite_utils import get_transaction_by_id
         transaction = get_transaction_by_id(transaction_id)
         
@@ -33,21 +32,6 @@ def bill_image(transaction_id):
             return Response("Bill image not found", status=404)
         
         img_data = transaction['receipt_image_url']
-=======
-        from appwrite_utils import db
-        
-        # Get transaction document
-        transaction = db.get_document('transactions', transaction_id)
-        
-        if not transaction or transaction.get('business_id') != business_id:
-            return Response("Bill image not found", status=404)
-        
-        receipt_image_url = transaction.get('receipt_image_url')
-        if not receipt_image_url:
-            return Response("Bill image not found", status=404)
-        
-        img_data = receipt_image_url
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
         
         # Handle data URL format (data:image/jpeg;base64,...)
         if img_data.startswith('data:image/'):
@@ -536,7 +520,8 @@ def business_customer_details(customer_id):
                          customer=customer_data, 
                          transactions=transactions_list,
                          credit_total=credit_total,
-                         payment_total=payment_total)
+                         payment_total=payment_total,
+                         calculated_balance=calculated_balance)
 
 @business_app.route('/add_customer', methods=['GET', 'POST'])
 @login_required
@@ -728,14 +713,14 @@ def business_transactions(customer_id):
         return redirect(url_for('business_customer_details', customer_id=customer_id))
     
     # GET request - show transaction form
-    customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
-    customer = dict(customer_response.data[0]) if customer_response and customer_response.data else {}
+    customer = appwrite_db.get_document('customers', customer_id)
     
     # Get current balance
-    credit_response = query_table('customer_credits', 
-                                 filters=[('business_id', 'eq', business_id),
-                                         ('customer_id', 'eq', customer_id)])
-    credit_info = credit_response.data[0] if credit_response and credit_response.data else {}
+    credit_docs = appwrite_db.query_documents('customer_credits', [
+        Query.equal('business_id', business_id),
+        Query.equal('customer_id', customer_id)
+    ])
+    credit_info = credit_docs[0] if credit_docs else {}
     
     customer['current_balance'] = credit_info.get('current_balance', 0)
     
@@ -760,20 +745,14 @@ def business_profile():
                 update_data['description'] = description
             
             if update_data:
-                query_table('businesses', query_type='update', 
-                           data=update_data, filters=[('id', 'eq', business_id)])
+                appwrite_db.update_document('businesses', business_id, update_data)
                 flash('Profile updated successfully!', 'success')
             
         except Exception as e:
             flash(f'Error updating profile: {str(e)}', 'error')
     
     # Get current business details
-    business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
-    business = business_response.data[0] if business_response and business_response.data else {
-        'name': session.get('business_name', 'Your Business'),
-        'description': 'Business account',
-        'access_pin': session.get('access_pin', '0000')
-    }
+    business = appwrite_db.get_document('businesses', business_id)
     
     return render_template('business/profile.html', business=business)
 
@@ -1038,18 +1017,20 @@ def remind_customer(customer_id):
         customer_id = safe_uuid(customer_id)
         
         # Get business details
-        business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
-        business = business_response.data[0] if business_response and business_response.data else {}
+        business = appwrite_db.get_document('businesses', business_id)
+        print(f"DEBUG: Business type: {type(business)}, Business data: {business}")
         
         # Get customer details
-        customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
-        customer = customer_response.data[0] if customer_response and customer_response.data else {}
+        customer = appwrite_db.get_document('customers', customer_id)
+        print(f"DEBUG: Customer type: {type(customer)}, Customer data: {customer}")
         
         # Get credit relationship for balance
-        credit_response = query_table('customer_credits', 
-                                   filters=[('business_id', 'eq', business_id), 
-                                           ('customer_id', 'eq', customer_id)])
-        credit = credit_response.data[0] if credit_response and credit_response.data else {}
+        credit_docs = appwrite_db.query_documents('customer_credits', [
+            Query.equal('business_id', business_id),
+            Query.equal('customer_id', customer_id)
+        ])
+        credit = credit_docs[0] if credit_docs else {}
+        print(f"DEBUG: Credit type: {type(credit)}, Credit data: {credit}")
         
         if not customer or not business:
             flash('Customer or business not found', 'error')

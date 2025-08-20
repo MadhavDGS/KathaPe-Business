@@ -10,10 +10,9 @@ import time
 import requests
 import socket
 import threading
-<<<<<<< HEAD
-=======
+
 # Appwrite utilities will be imported when needed to avoid circular imports
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
+
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -41,7 +40,7 @@ logger = logging.getLogger(__name__)
 # Check if running on Render
 RENDER_DEPLOYMENT = os.environ.get('RENDER', False)
 
-<<<<<<< HEAD
+
 # Appwrite Configuration
 from appwrite_config import AppwriteConfig
 from appwrite_utils import AppwriteDB
@@ -51,7 +50,7 @@ appwrite_config = AppwriteConfig()
 appwrite_db = AppwriteDB()
 
 # Set environment variables from hardcoded values only if not already set
-=======
+
 # Environment variables - Appwrite Configuration
 APPWRITE_ENDPOINT = os.environ.get('APPWRITE_ENDPOINT', 'https://cloud.appwrite.io/v1')
 APPWRITE_PROJECT_ID = os.environ.get('APPWRITE_PROJECT_ID')
@@ -63,7 +62,7 @@ os.environ.setdefault('APPWRITE_ENDPOINT', APPWRITE_ENDPOINT)
 os.environ.setdefault('APPWRITE_PROJECT_ID', APPWRITE_PROJECT_ID or '')
 os.environ.setdefault('APPWRITE_API_KEY', APPWRITE_API_KEY or '')
 os.environ.setdefault('APPWRITE_DATABASE_ID', APPWRITE_DATABASE_ID)
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
+
 os.environ.setdefault('SECRET_KEY', 'fc36290a52f89c1c92655b7d22b198e4')
 os.environ.setdefault('UPLOAD_FOLDER', 'static/uploads')
 
@@ -156,7 +155,7 @@ class RequestLoggerMiddleware:
             """
             return [error_html.encode('utf-8')]
 
-<<<<<<< HEAD
+
 # Initialize the Appwrite connection
 def init_appwrite():
     """Initialize and test Appwrite connection"""
@@ -180,7 +179,7 @@ def test_appwrite_connection():
         return True
     except Exception as e:
         print(f"Failed to test Appwrite connection: {str(e)}")
-=======
+
 # PostgreSQL connection pool
 db_pool = None
 
@@ -197,7 +196,6 @@ def test_db_connection():
         return True
     except Exception as e:
         print(f"Appwrite connection failed: {str(e)}")
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
         return False
 
 def init_db_pool():
@@ -245,7 +243,6 @@ def execute_query(operation, collection_name, data=None, filters=None, document_
         print(f"Appwrite operation error: {str(e)}")
         return None
 
-<<<<<<< HEAD
 # Safe query wrapper - DEPRECATED, use Appwrite directly
 def query_table(table_name, query_type='select', fields='*', filters=None, data=None, limit=None):
     """
@@ -259,7 +256,7 @@ def query_table(table_name, query_type='select', fields='*', filters=None, data=
     return QueryResult(data=[], success=False, error="Function deprecated - use Appwrite directly")
 
 # File upload helper function
-=======
+
 
 
 # Utility function to ensure valid document IDs for Appwrite
@@ -398,7 +395,7 @@ def query_table(collection_name, query_type='select', fields='*', filters=None, 
         
         return Response([])
         # File upload helper function
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
+
 def allowed_file(filename):
     """Check if a file has an allowed extension"""
     allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
@@ -453,19 +450,19 @@ def generate_permanent_business_pin():
 def check_pin_uniqueness(pin):
     """Check if the generated PIN is unique in the database"""
     try:
-<<<<<<< HEAD
+
         from appwrite.query import Query
         businesses = appwrite_db.list_documents('businesses', [
             Query.equal('access_pin', pin),
             Query.limit(1)
         ])
-=======
+
         # Import here to avoid circular imports
         from appwrite_utils import db
         
         # Query businesses collection for existing PIN
         businesses = db.query_documents('businesses', {'access_pin': pin}, limit=1)
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
+
         return len(businesses) == 0
     except Exception as e:
         print(f"Error checking PIN uniqueness: {e}")
