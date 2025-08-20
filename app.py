@@ -5,6 +5,13 @@ from common_utils import *
 import base64
 from flask import Response
 
+# Import Appwrite utilities
+from appwrite_utils import AppwriteDB
+from appwrite.query import Query
+
+# Initialize Appwrite DB
+appwrite_db = AppwriteDB()
+
 # Create the business Flask app
 business_app = create_app('Khatape-Business')
 
@@ -17,20 +24,14 @@ def bill_image(transaction_id):
         business_id = safe_uuid(session.get('business_id'))
         transaction_id = safe_uuid(transaction_id)
         
-        # Get the base64 image data from database
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute("""
-                SELECT receipt_image_url FROM transactions 
-                WHERE id = %s AND business_id = %s
-            """, [transaction_id, business_id])
-            result = cursor.fetchone()
-        conn.close()
+        # Get the base64 image data from Appwrite
+        from appwrite_utils import get_transaction_by_id
+        transaction = get_transaction_by_id(transaction_id)
         
-        if not result or not result['receipt_image_url']:
+        if not transaction or transaction.get('business_id') != business_id or not transaction.get('receipt_image_url'):
             return Response("Bill image not found", status=404)
         
-        img_data = result['receipt_image_url']
+        img_data = transaction['receipt_image_url']
         
         # Handle data URL format (data:image/jpeg;base64,...)
         if img_data.startswith('data:image/'):
@@ -130,22 +131,26 @@ def login():
                 flash('Please enter both phone number and password', 'error')
                 return render_template('login.html')
             
-            # Emergency login disabled for security - all logins must authenticate with database
-            # Do NOT set session data before authentication!
-            
-            # Try database authentication
+            # Try Appwrite authentication
             try:
-                logger.info("Testing database connection for business login")
-                conn = psycopg2.connect(EXTERNAL_DATABASE_URL, connect_timeout=5)
+                logger.info("Testing Appwrite connection for business login")
                 
-                with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-                    # Query business user
-                    cursor.execute("SELECT id, name, password FROM users WHERE phone_number = %s AND user_type = 'business' LIMIT 1", [phone])
-                    user_data = cursor.fetchone()
-                    
-                    if user_data and user_data['password'] == password:
+                # Use appwrite_db to find user
+                appwrite_db._ensure_initialized()
+                from appwrite.query import Query
+                
+                # Query business user
+                users = appwrite_db.list_documents('users', [
+                    Query.equal('phone_number', phone),
+                    Query.equal('user_type', 'business'),
+                    Query.limit(1)
+                ])
+                
+                if users and len(users) > 0:
+                    user_data = users[0]
+                    if user_data.get('password') == password:
                         # ONLY set session after successful password verification
-                        user_id = user_data['id']
+                        user_id = user_data['$id']
                         user_name = user_data.get('name', f"Business {phone[-4:]}" if phone and len(phone) > 4 else "Business User")
                         
                         session['user_id'] = user_id
@@ -154,34 +159,41 @@ def login():
                         session['phone_number'] = phone
                         session.permanent = True
                         
-                        # Get business details
-                        cursor.execute("SELECT id, name, access_pin FROM businesses WHERE user_id = %s LIMIT 1", [user_id])
-                        business_data = cursor.fetchone()
+                        # Get business details using Appwrite
+                        businesses = appwrite_db.list_documents('businesses', [
+                            Query.equal('user_id', user_id),
+                            Query.limit(1)
+                        ])
                         
-                        if business_data:
-                            session['business_id'] = business_data['id']
+                        if businesses and len(businesses) > 0:
+                            business_data = businesses[0]
+                            session['business_id'] = business_data['$id']
                             session['business_name'] = business_data['name']
                             session['access_pin'] = business_data['access_pin']
                         else:
                             # Create business record if it doesn't exist
                             business_id = str(uuid.uuid4())
-                            access_pin = get_unique_business_pin()  # Use permanent PIN instead of timestamp
-                            cursor.execute("""
-                                INSERT INTO businesses (id, user_id, name, access_pin, created_at)
-                                VALUES (%s, %s, %s, %s, %s)
-                            """, [business_id, user_id, f"{session['user_name']}'s Business", access_pin, datetime.now().isoformat()])
-                            conn.commit()
+                            access_pin = get_unique_business_pin()
+                            business_doc = {
+                                'user_id': user_id,
+                                'name': f"{session['user_name']}'s Business",
+                                'access_pin': access_pin,
+                                'created_at': datetime.now().isoformat(),
+                                'is_active': True
+                            }
+                            appwrite_db.create_document('businesses', business_doc, business_id)
                             session['business_id'] = business_id
                             session['business_name'] = f"{session['user_name']}'s Business"
                             session['access_pin'] = access_pin
                         
-                        conn.close()
                         flash('Successfully logged in!', 'success')
                         return redirect(url_for('business_dashboard'))
                     else:
-                        conn.close()
                         flash('Invalid phone number or password', 'error')
                         return render_template('login.html')
+                else:
+                    flash('Invalid phone number or password', 'error')
+                    return render_template('login.html')
                 
             except Exception as e:
                 logger.error(f"Database error in business login: {str(e)}")
@@ -210,34 +222,46 @@ def register():
             return render_template('register.html')
         
         try:
-            # Check if phone number already exists
-            check_query = "SELECT id FROM users WHERE phone_number = %s"
-            existing_user = execute_query(check_query, [phone], fetch_one=True)
+            # Check if phone number already exists using Appwrite
+            appwrite_db._ensure_initialized()
+            from appwrite.query import Query
             
-            if existing_user:
+            existing_users = appwrite_db.list_documents('users', [
+                Query.equal('phone_number', phone),
+                Query.limit(1)
+            ])
+            
+            if existing_users and len(existing_users) > 0:
                 flash('Phone number already registered', 'error')
                 return render_template('register.html')
             
             # Create user and business records
             user_id = str(uuid.uuid4())
             business_id = str(uuid.uuid4())
-            access_pin = get_unique_business_pin()  # Use permanent PIN instead of timestamp
+            access_pin = get_unique_business_pin()
             
-            # Create user record
-            user_query = """
-                INSERT INTO users (id, name, phone_number, user_type, password, created_at) 
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """
-            user_result = execute_query(user_query, [user_id, name, phone, 'business', password, datetime.now().isoformat()], fetch_one=True)
+            # Create user record in Appwrite
+            user_doc = {
+                'name': name,
+                'phone_number': phone,
+                'user_type': 'business',
+                'password': password,
+                'created_at': datetime.now().isoformat(),
+                'is_active': True
+            }
+            user_result = appwrite_db.create_document('users', user_doc, user_id)
             
             if user_result:
-                # Create business record
-                business_query = """
-                    INSERT INTO businesses (id, user_id, name, description, access_pin, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                execute_query(business_query, [business_id, user_id, f"{name}'s Business", 'My business account', access_pin, datetime.now().isoformat()])
+                # Create business record in Appwrite
+                business_doc = {
+                    'user_id': user_id,
+                    'name': f"{name}'s Business",
+                    'description': 'My business account',
+                    'access_pin': access_pin,
+                    'created_at': datetime.now().isoformat(),
+                    'is_active': True
+                }
+                appwrite_db.create_document('businesses', business_doc, business_id)
                 
                 # Auto-login: Set session data (same as login function)
                 session['user_id'] = user_id
@@ -268,21 +292,22 @@ def business_dashboard():
         user_id = safe_uuid(session.get('user_id'))
         business_id = safe_uuid(session.get('business_id'))
         
-        # Get business details
-        business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
+        # Get business details using Appwrite
+        appwrite_db._ensure_initialized()
+        from appwrite.query import Query
         
-        if business_response and business_response.data:
-            business = business_response.data[0]
-        else:
+        business = appwrite_db.get_document('businesses', business_id)
+        
+        if not business:
             # Create mock business object from session data
             business = {
-                'id': business_id,
+                '$id': business_id,
                 'name': session.get('business_name', 'Your Business'),
                 'description': 'Business account',
                 'access_pin': session.get('access_pin', '0000')
             }
         
-        # Get summary data
+        # Get summary data using Appwrite
         total_customers = 0
         total_credit = 0
         total_payments = 0
@@ -290,83 +315,54 @@ def business_dashboard():
         customers = []
         
         try:
-            # Connect directly to database
-            conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-                # Get total customers count
-                cursor.execute("SELECT COUNT(*) FROM customer_credits WHERE business_id = %s", [business_id])
-                total_customers = cursor.fetchone()[0]
-                
-                # Get recent customers - ordered by most recent transaction activity
-                cursor.execute("""
-                    SELECT c.id, c.name, c.phone_number, 
-                           MAX(t.created_at) as last_transaction_date
-                    FROM customers c
-                    JOIN customer_credits cc ON c.id = cc.customer_id
-                    LEFT JOIN transactions t ON c.id = t.customer_id AND t.business_id = %s
-                    WHERE cc.business_id = %s
-                    GROUP BY c.id, c.name, c.phone_number
-                    ORDER BY last_transaction_date DESC NULLS LAST
-                """, [business_id, business_id])
-                
-                customers_data = cursor.fetchall()
-                for customer in customers_data:
-                    customer_id = customer['id']
-                    
-                    # Calculate actual balance from transactions
-                    cursor.execute("""
-                        SELECT amount, transaction_type
-                        FROM transactions
-                        WHERE business_id = %s AND customer_id = %s
-                    """, [business_id, customer_id])
-                    
-                    transactions_data = cursor.fetchall()
-                    credit_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'credit'])
-                    payment_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'payment'])
-                    current_balance = credit_total - payment_total
-                    
-                    # Show all customers with transactions (not just positive balance)
-                    if len(transactions_data) > 0:  # Only show customers who have transaction history
-                        customers.append({
-                            'id': customer['id'],
-                            'name': customer['name'],
-                            'phone_number': customer['phone_number'],
-                            'current_balance': current_balance,
-                            'last_transaction_date': customer['last_transaction_date']
-                        })
-                
-                # Get recent transactions - increased to 15
-                cursor.execute("""
-                    SELECT t.*, c.name as customer_name
-                    FROM transactions t
-                    LEFT JOIN customers c ON t.customer_id = c.id
-                    WHERE t.business_id = %s
-                    ORDER BY t.created_at DESC
-                    LIMIT 15
-                """, [business_id])
-                
-                transactions_data = cursor.fetchall()
-                for tx in transactions_data:
-                    transactions.append({
-                        'id': tx['id'],
-                        'amount': float(tx['amount']) if tx['amount'] else 0,
-                        'transaction_type': tx['transaction_type'],
-                        'notes': tx.get('notes', ''),
-                        'created_at': tx['created_at'],
-                        'customer_name': tx.get('customer_name', 'Unknown')
-                    })
-                
-                # Calculate total outstanding - sum all positive customer balances
-                total_outstanding = sum([customer['current_balance'] for customer in customers if customer['current_balance'] > 0])
-                
-                # Customers are already ordered by recent transaction activity from the query
-                # Limit to top 5 for display
-                customers = customers[:5]
-                
-                print(f"DEBUG: Business Dashboard Calculations:")
-                print(f"Total Outstanding (sum of positive customer balances): {total_outstanding}")
+            # Get customer credits for this business
+            customer_credits = appwrite_db.list_documents('customer_credits', [
+                Query.equal('business_id', business_id)
+            ])
+            total_customers = len(customer_credits)
             
-            conn.close()
+            # Get all transactions for this business (limited for dashboard)
+            all_transactions = appwrite_db.list_documents('transactions', [
+                Query.equal('business_id', business_id),
+                Query.order_desc('created_at'),
+                Query.limit(50)
+            ])
+            
+            # Calculate totals from transactions
+            for transaction in all_transactions:
+                amount = float(transaction.get('amount', 0))
+                if transaction.get('transaction_type') == 'credit':
+                    total_credit += amount
+                elif transaction.get('transaction_type') == 'payment':
+                    total_payments += amount
+            
+            # Get recent transactions for display (limited to 10)
+            transactions = all_transactions[:10]
+            
+            # Get customer details for the customers with credits
+            customers_list = []
+            for credit in customer_credits[:10]:  # Limit to 10 for dashboard
+                customer_id = credit.get('customer_id')
+                if customer_id:
+                    customer = appwrite_db.get_document('customers', customer_id)
+                    if customer:
+                        customer_data = {
+                            'id': customer['$id'],
+                            'name': customer.get('name', 'Unknown'),
+                            'phone_number': customer.get('phone_number', ''),
+                            'current_balance': credit.get('current_balance', 0)
+                        }
+                        customers_list.append(customer_data)
+            customers = customers_list
+            
+            # Calculate total outstanding - sum all positive customer balances
+            total_outstanding = sum([customer['current_balance'] for customer in customers if customer['current_balance'] > 0])
+            
+            # Limit to top 5 for display
+            customers = customers[:5]
+            
+            print(f"DEBUG: Business Dashboard Calculations:")
+            print(f"Total Outstanding (sum of positive customer balances): {total_outstanding}")
             
         except Exception as e:
             print(f"Database error in business dashboard: {str(e)}")
@@ -399,35 +395,49 @@ def business_dashboard():
 def business_customers():
     business_id = safe_uuid(session.get('business_id'))
     
-    # Get all customer credits for this business
-    customers_response = query_table('customer_credits', filters=[('business_id', 'eq', business_id)])
-    customer_credits = customers_response.data if customers_response and customers_response.data else []
-    
-    # Gather all customer details
-    customers = []
-    for credit in customer_credits:
-        customer_id = credit.get('customer_id')
-        if customer_id:
-            customer_detail = query_table('customers', filters=[('id', 'eq', customer_id)])
-            if customer_detail and customer_detail.data:
-                customer = dict(customer_detail.data[0])  # Convert to regular dict
-                
-                # Calculate actual balance from transactions instead of using stored balance
-                transactions_response = query_table('transactions', 
-                                                   filters=[('business_id', 'eq', business_id), 
-                                                           ('customer_id', 'eq', customer_id)])
-                transactions = transactions_response.data if transactions_response and transactions_response.data else []
-                
-                # Calculate totals the same way as customer details page
-                credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
-                payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
-                current_balance = credit_total - payment_total
-                
-                customer['current_balance'] = current_balance
-                customers.append(customer)
-    
-    # Sort customers by current balance (highest first), then by name
-    customers.sort(key=lambda x: (-x.get('current_balance', 0), x.get('name', '')))
+    try:
+        # Get all customer credits for this business
+        customer_credits = appwrite_db.list_documents('customer_credits', [
+            Query.equal('business_id', business_id)
+        ])
+        
+        # Gather all customer details
+        customers = []
+        for credit in customer_credits:
+            customer_id = credit.get('customer_id')
+            if customer_id:
+                try:
+                    customer = appwrite_db.get_document('customers', customer_id)
+                    
+                    # Calculate actual balance from transactions
+                    transactions = appwrite_db.list_documents('transactions', [
+                        Query.equal('business_id', business_id),
+                        Query.equal('customer_id', customer_id)
+                    ])
+                    
+                    # Calculate totals the same way as customer details page
+                    credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
+                    payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
+                    current_balance = credit_total - payment_total
+                    
+                    customer_data = {
+                        'id': customer['$id'],
+                        'name': customer.get('name', 'Unknown'),
+                        'phone_number': customer.get('phone_number', ''),
+                        'current_balance': current_balance
+                    }
+                    customers.append(customer_data)
+                except Exception as e:
+                    print(f"Error getting customer {customer_id}: {str(e)}")
+                    continue
+        
+        # Sort customers by current balance (highest first), then by name
+        customers.sort(key=lambda x: (-x.get('current_balance', 0), x.get('name', '')))
+        
+    except Exception as e:
+        print(f"Error in business customers: {str(e)}")
+        flash('Error loading customers', 'error')
+        customers = []
     
     return render_template('business/customers.html', customers=customers)
 
@@ -438,79 +448,79 @@ def business_customer_details(customer_id):
     business_id = safe_uuid(session.get('business_id'))
     customer_id = safe_uuid(customer_id)
     
-    # Get credit relationship
-    credit_response = query_table('customer_credits', 
-                               filters=[('business_id', 'eq', business_id), 
-                                       ('customer_id', 'eq', customer_id)])
-    credit = credit_response.data[0] if credit_response and credit_response.data else {}
-    
-    # Get customer details
-    customer_response = query_table('customers', filters=[('id', 'eq', customer_id)])
-    customer = customer_response.data[0] if customer_response and customer_response.data else {}
-    
-    # Merge customer details with credit information
-    if customer and credit:
-        customer = {**customer, 'current_balance': credit.get('current_balance', 0)}
-    
-    # Get transaction history - Force fresh query from database
     try:
-        # Use direct database query to ensure we get the latest transactions
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute("""
-                SELECT * FROM transactions 
-                WHERE business_id = %s AND customer_id = %s 
-                ORDER BY created_at DESC
-            """, [business_id, customer_id])
-            
-            transactions_data = cursor.fetchall()
-            transactions = []
-            for tx in transactions_data:
-                transactions.append({
-                    'id': tx['id'],
-                    'amount': float(tx['amount']) if tx['amount'] else 0,
-                    'transaction_type': tx['transaction_type'],
-                    'notes': tx.get('notes', ''),
-                    'created_at': tx['created_at'],
-                    'created_by': tx.get('created_by', ''),
-                    'receipt_image_url': tx.get('receipt_image_url', '')
+        # Get credit relationship
+        credit_response = appwrite_db.list_documents('customer_credits', [
+            Query.equal('business_id', business_id),
+            Query.equal('customer_id', customer_id)
+        ])
+        credit = credit_response[0] if credit_response else {}
+        
+        # Get customer details
+        customer = appwrite_db.get_document('customers', customer_id)
+        
+        if not customer:
+            flash('Customer not found', 'error')
+            return redirect(url_for('business_customers'))
+        
+        # Merge customer details with credit information
+        customer_data = {
+            'id': customer['$id'],
+            'name': customer.get('name', 'Unknown'),
+            'phone_number': customer.get('phone_number', ''),
+            'current_balance': credit.get('current_balance', 0)
+        }
+        
+        # Get transaction history using Appwrite
+        transactions = appwrite_db.list_documents('transactions', [
+            Query.equal('business_id', business_id),
+            Query.equal('customer_id', customer_id),
+            Query.order_desc('created_at')
+        ])
+        
+        # Format transactions for display
+        transactions_list = []
+        for tx in transactions:
+            transactions_list.append({
+                'id': tx['$id'],
+                'amount': float(tx.get('amount', 0)),
+                'transaction_type': tx.get('transaction_type', ''),
+                'notes': tx.get('notes', ''),
+                'created_at': tx.get('created_at', ''),
+                'created_by': tx.get('created_by', ''),
+                'receipt_image_url': tx.get('receipt_image_url', '')
+            })
+        
+        print(f"DEBUG: Found {len(transactions_list)} transactions for customer {customer_id}")
+        
+        # Calculate totals
+        credit_total = sum([float(t.get('amount', 0)) for t in transactions_list if t.get('transaction_type') == 'credit'])
+        payment_total = sum([float(t.get('amount', 0)) for t in transactions_list if t.get('transaction_type') == 'payment'])
+        
+        # Calculate the actual balance that customer should give
+        calculated_balance = credit_total - payment_total
+        
+        # Update the stored balance in customer_credits table to match calculated balance
+        if credit:
+            try:
+                appwrite_db.update_document('customer_credits', credit['$id'], {
+                    'current_balance': calculated_balance,
+                    'updated_at': datetime.now().isoformat()
                 })
-        conn.close()
-        
-        print(f"DEBUG: Found {len(transactions)} transactions for customer {customer_id}")
+                customer_data['current_balance'] = calculated_balance
+            except Exception as e:
+                print(f"Error updating customer balance: {str(e)}")
         
     except Exception as e:
-        print(f"Error fetching transactions: {str(e)}")
-        # Fallback to query_table method
-        transactions_response = query_table('transactions', 
-                                           filters=[('business_id', 'eq', business_id), 
-                                                   ('customer_id', 'eq', customer_id)])
-        transactions = transactions_response.data if transactions_response and transactions_response.data else []
-    
-    # Calculate totals
-    credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
-    payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
-    
-    # Calculate the actual balance that customer should give
-    calculated_balance = credit_total - payment_total
-    
-    # Update the stored balance in customer_credits table to match calculated balance
-    try:
-        execute_query(
-            "UPDATE customer_credits SET current_balance = %s, updated_at = %s WHERE business_id = %s AND customer_id = %s",
-            [calculated_balance, get_ist_now().isoformat(), business_id, customer_id],
-            commit=True
-        )
-        print(f"DEBUG: Updated stored balance to {calculated_balance} for customer {customer_id}")
-    except Exception as e:
-        print(f"WARNING: Could not update stored balance: {str(e)}")
+        print(f"Error in customer details: {str(e)}")
+        flash('Error loading customer details', 'error')
+        return redirect(url_for('business_customers'))
     
     return render_template('business/customer_details.html', 
-                          customer=customer, 
-                          transactions=transactions,
-                          credit_total=credit_total,
-                          payment_total=payment_total,
-                          calculated_balance=calculated_balance)
+                         customer=customer_data, 
+                         transactions=transactions_list,
+                         credit_total=credit_total,
+                         payment_total=payment_total)
 
 @business_app.route('/add_customer', methods=['GET', 'POST'])
 @login_required
@@ -529,39 +539,43 @@ def add_customer():
             business_id = safe_uuid(session.get('business_id'))
             
             # Check if customer already exists by phone number
-            existing_customer = execute_query("SELECT id FROM customers WHERE phone_number = %s LIMIT 1", [phone], fetch_one=True)
+            existing_customers = appwrite_db.list_documents('customers', [
+                Query.equal('phone_number', phone),
+                Query.limit(1)
+            ])
             
-            if existing_customer:
-                customer_id = existing_customer['id']
+            if existing_customers:
+                customer_id = existing_customers[0]['$id']
+                customer = existing_customers[0]
                 print(f"DEBUG: Found existing customer with ID: {customer_id}")
             else:
                 # Create new customer record
-                customer_id = str(uuid.uuid4())
-                customer_query = """
-                    INSERT INTO customers (id, name, phone_number, created_at)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id
-                """
-                result = execute_query(customer_query, [customer_id, name, phone, get_ist_now().isoformat()], fetch_one=True)
-                if not result:
-                    raise Exception("Failed to create customer")
+                customer_data = {
+                    'name': name,
+                    'phone_number': phone,
+                    'created_at': datetime.now().isoformat()
+                }
+                customer = appwrite_db.create_document('customers', 'unique()', customer_data)
+                customer_id = customer['$id']
                 print(f"DEBUG: Created new customer with ID: {customer_id}")
                 
                 # Create customer user account with default password "devi123"
                 try:
                     # Check if user account already exists for this phone number
-                    existing_user = execute_query("SELECT id FROM users WHERE phone_number = %s LIMIT 1", [phone], fetch_one=True)
+                    existing_users = appwrite_db.list_documents('users', [
+                        Query.equal('phone_number', phone),
+                        Query.limit(1)
+                    ])
                     
-                    if not existing_user:
-                        user_id = str(uuid.uuid4())
-                        user_query = """
-                            INSERT INTO users (id, name, phone_number, user_type, password, created_at) 
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            RETURNING id
-                        """
-                        user_result = execute_query(user_query, [
-                            user_id, name, phone, 'customer', 'devi123', get_ist_now().isoformat()
-                        ], fetch_one=True)
+                    if not existing_users:
+                        user_data = {
+                            'name': name,
+                            'phone_number': phone,
+                            'user_type': 'customer',
+                            'password': 'devi123',
+                            'created_at': datetime.now().isoformat()
+                        }
+                        user_result = appwrite_db.create_document('users', 'unique()', user_data)
                         
                         if user_result:
                             print(f"DEBUG: Created customer user account for {phone} with password 'devi123'")
@@ -575,24 +589,25 @@ def add_customer():
                     # Don't fail the whole operation if user creation fails
             
             # Check if credit relationship already exists
-            existing_credit = execute_query(
-                "SELECT id FROM customer_credits WHERE business_id = %s AND customer_id = %s LIMIT 1", 
-                [business_id, customer_id], fetch_one=True
-            )
+            existing_credits = appwrite_db.list_documents('customer_credits', [
+                Query.equal('business_id', business_id),
+                Query.equal('customer_id', customer_id),
+                Query.limit(1)
+            ])
             
-            if existing_credit:
+            if existing_credits:
                 flash('Customer already exists in your business!', 'warning')
                 return redirect(url_for('business_customers'))
             else:
                 # Create new credit relationship
-                credit_query = """
-                    INSERT INTO customer_credits (id, business_id, customer_id, current_balance, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                execute_query(credit_query, [
-                    str(uuid.uuid4()), business_id, customer_id, 
-                    initial_balance, get_ist_now().isoformat(), get_ist_now().isoformat()
-                ])
+                credit_data = {
+                    'business_id': business_id,
+                    'customer_id': customer_id,
+                    'current_balance': initial_balance,
+                    'created_at': datetime.now().isoformat(),
+                    'updated_at': datetime.now().isoformat()
+                }
+                appwrite_db.create_document('customer_credits', 'unique()', credit_data)
                 print(f"DEBUG: Created credit relationship for customer {customer_id} with business {business_id}")
             
             flash('Customer added successfully! Customer can now login with phone number and password: devi123', 'success')
@@ -631,35 +646,30 @@ def business_transactions(customer_id):
         try:
             # Create transaction
             transaction_data = {
-                'id': str(uuid.uuid4()),
                 'business_id': business_id,
                 'customer_id': customer_id,
                 'amount': amount,
                 'transaction_type': transaction_type,
                 'notes': notes,
-                'created_at': get_ist_now().isoformat(),
+                'created_at': datetime.now().isoformat(),
                 'created_by': session.get('user_id')
             }
             
-            columns = list(transaction_data.keys())
-            placeholders = ["%s"] * len(columns)
-            values = [transaction_data[col] for col in columns]
-            
-            query = f"INSERT INTO transactions ({', '.join(columns)}) VALUES ({', '.join(placeholders)}) RETURNING id"
-            result = execute_query(query, values, fetch_one=True, commit=True)
+            result = appwrite_db.create_document('transactions', 'unique()', transaction_data)
             
             if result:
                 # Update customer balance in customer_credits table
                 try:
                     # Get current balance
-                    current_credit = execute_query(
-                        "SELECT current_balance FROM customer_credits WHERE business_id = %s AND customer_id = %s", 
-                        [business_id, customer_id], 
-                        fetch_one=True
-                    )
+                    credit_records = appwrite_db.list_documents('customer_credits', [
+                        Query.equal('business_id', business_id),
+                        Query.equal('customer_id', customer_id),
+                        Query.limit(1)
+                    ])
                     
-                    if current_credit:
-                        current_balance = float(current_credit['current_balance']) if current_credit['current_balance'] else 0.0
+                    if credit_records:
+                        credit_record = credit_records[0]
+                        current_balance = float(credit_record.get('current_balance', 0))
                         
                         # Calculate new balance based on transaction type
                         if transaction_type == 'credit':
@@ -668,21 +678,23 @@ def business_transactions(customer_id):
                             new_balance = current_balance - amount  # Customer owes less
                         
                         # Update the balance
-                        execute_query(
-                            "UPDATE customer_credits SET current_balance = %s, updated_at = %s WHERE business_id = %s AND customer_id = %s",
-                            [new_balance, datetime.now().isoformat(), business_id, customer_id],
-                            commit=True
-                        )
+                        appwrite_db.update_document('customer_credits', credit_record['$id'], {
+                            'current_balance': new_balance,
+                            'updated_at': datetime.now().isoformat()
+                        })
                         
                         print(f"Updated customer balance: {current_balance} -> {new_balance} (transaction: {transaction_type} {amount})")
                     else:
                         # Create customer credit record if it doesn't exist
                         initial_balance = amount if transaction_type == 'credit' else -amount
-                        execute_query(
-                            "INSERT INTO customer_credits (id, business_id, customer_id, current_balance, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                            [str(uuid.uuid4()), business_id, customer_id, initial_balance, datetime.now().isoformat(), datetime.now().isoformat()],
-                            commit=True
-                        )
+                        credit_data = {
+                            'business_id': business_id,
+                            'customer_id': customer_id,
+                            'current_balance': initial_balance,
+                            'created_at': datetime.now().isoformat(),
+                            'updated_at': datetime.now().isoformat()
+                        }
+                        appwrite_db.create_document('customer_credits', 'unique()', credit_data)
                         print(f"Created new customer credit record with balance: {initial_balance}")
                 
                 except Exception as balance_error:
@@ -761,11 +773,11 @@ def regenerate_business_pin():
         new_pin = get_unique_business_pin()
         
         # Update the business PIN in the database
-        execute_query(
-            "UPDATE businesses SET access_pin = %s, updated_at = %s WHERE id = %s",
-            [new_pin, datetime.now().isoformat(), business_id],
-            commit=True
-        )
+        business = appwrite_db.get_document('businesses', business_id)
+        appwrite_db.update_document('businesses', business_id, {
+            'access_pin': new_pin,
+            'updated_at': datetime.now().isoformat()
+        })
         
         # Update the session
         session['access_pin'] = new_pin
@@ -846,36 +858,40 @@ def all_transactions():
         total_count = 0
         
         try:
-            # Connect directly to database
-            conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-                # Get total count for pagination
-                cursor.execute("SELECT COUNT(*) FROM transactions WHERE business_id = %s", [business_id])
-                total_count = cursor.fetchone()[0]
-                
-                # Get transactions with pagination
-                cursor.execute("""
-                    SELECT t.*, c.name as customer_name
-                    FROM transactions t
-                    LEFT JOIN customers c ON t.customer_id = c.id
-                    WHERE t.business_id = %s
-                    ORDER BY t.created_at DESC
-                    LIMIT %s OFFSET %s
-                """, [business_id, per_page, offset])
-                
-                transactions_data = cursor.fetchall()
-                for tx in transactions_data:
-                    transactions.append({
-                        'id': tx['id'],
-                        'amount': float(tx['amount']) if tx['amount'] else 0,
-                        'transaction_type': tx['transaction_type'],
-                        'notes': tx.get('notes', ''),
-                        'created_at': tx['created_at'],
-                        'customer_name': tx.get('customer_name', 'Unknown'),
-                        'receipt_image_url': tx.get('receipt_image_url', '')
-                    })
+            # Get total count for pagination - Appwrite doesn't have direct count, we'll get all and count
+            all_transactions = appwrite_db.list_documents('transactions', [
+                Query.equal('business_id', business_id)
+            ])
+            total_count = len(all_transactions)
             
-            conn.close()
+            # Get transactions with pagination and sorting
+            paginated_transactions = appwrite_db.list_documents('transactions', [
+                Query.equal('business_id', business_id),
+                Query.order_desc('created_at'),
+                Query.limit(per_page),
+                Query.offset(offset)
+            ])
+            
+            # Format transactions for display
+            for tx in paginated_transactions:
+                customer_name = 'Unknown'
+                customer_id = tx.get('customer_id')
+                if customer_id:
+                    try:
+                        customer = appwrite_db.get_document('customers', customer_id)
+                        customer_name = customer.get('name', 'Unknown')
+                    except:
+                        pass
+                
+                transactions.append({
+                    'id': tx['$id'],
+                    'amount': float(tx.get('amount', 0)),
+                    'transaction_type': tx.get('transaction_type', ''),
+                    'notes': tx.get('notes', ''),
+                    'created_at': tx.get('created_at', ''),
+                    'customer_name': customer_name,
+                    'receipt_image_url': tx.get('receipt_image_url', '')
+                })
             
         except Exception as e:
             print(f"Database error in business transactions: {str(e)}")
@@ -909,23 +925,28 @@ def view_bill_image(transaction_id):
         
         print(f"DEBUG: View bill request for transaction {transaction_id}")
         
-        # Verify transaction belongs to the business
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            cursor.execute("""
-                SELECT t.receipt_image_url, t.notes, t.amount, t.transaction_type, t.created_at,
-                       c.name as customer_name
-                FROM transactions t
-                LEFT JOIN customers c ON t.customer_id = c.id
-                WHERE t.id = %s AND t.business_id = %s
-            """, [transaction_id, business_id])
+        # Verify transaction belongs to the business and get details
+        try:
+            transaction = appwrite_db.get_document('transactions', transaction_id)
             
-            transaction = cursor.fetchone()
+            # Verify it belongs to this business
+            if transaction.get('business_id') != business_id:
+                print(f"DEBUG: Transaction {transaction_id} doesn't belong to business {business_id}")
+                flash('Transaction not found', 'error')
+                return redirect(url_for('all_transactions'))
+            
+            # Get customer name
+            customer_name = 'Unknown'
+            customer_id = transaction.get('customer_id')
+            if customer_id:
+                try:
+                    customer = appwrite_db.get_document('customers', customer_id)
+                    customer_name = customer.get('name', 'Unknown')
+                except:
+                    pass
         
-        conn.close()
-        
-        if not transaction:
-            print(f"DEBUG: Transaction {transaction_id} not found")
+        except Exception as e:
+            print(f"DEBUG: Transaction {transaction_id} not found: {str(e)}")
             flash('Transaction not found', 'error')
             return redirect(url_for('all_transactions'))
         
@@ -935,10 +956,10 @@ def view_bill_image(transaction_id):
             'id': transaction_id,
             'receipt_image_url': transaction.get('receipt_image_url', ''),
             'notes': transaction.get('notes', ''),
-            'amount': float(transaction['amount']) if transaction['amount'] else 0,
-            'transaction_type': transaction['transaction_type'],
-            'created_at': transaction['created_at'],
-            'customer_name': transaction.get('customer_name', 'Unknown')
+            'amount': float(transaction.get('amount', 0)),
+            'transaction_type': transaction.get('transaction_type', ''),
+            'created_at': transaction.get('created_at', ''),
+            'customer_name': customer_name
         }
         
         print(f"DEBUG: Rendering view_bill template for transaction {transaction_id}")
@@ -957,33 +978,30 @@ def sync_customer_data(customer_id):
     customer_id = safe_uuid(customer_id)
     
     try:
-        # Force refresh all transaction data for this customer
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            # Get all transactions for this customer-business relationship
-            cursor.execute("""
-                SELECT * FROM transactions 
-                WHERE business_id = %s AND customer_id = %s 
-                ORDER BY created_at DESC
-            """, [business_id, customer_id])
-            
-            transactions = cursor.fetchall()
-            
-            # Recalculate balance
-            credit_total = sum([float(t['amount']) for t in transactions if t['transaction_type'] == 'credit'])
-            payment_total = sum([float(t['amount']) for t in transactions if t['transaction_type'] == 'payment'])
-            new_balance = credit_total - payment_total
-            
-            # Update the stored balance
-            cursor.execute("""
-                UPDATE customer_credits 
-                SET current_balance = %s, updated_at = %s 
-                WHERE business_id = %s AND customer_id = %s
-            """, [new_balance, get_ist_now().isoformat(), business_id, customer_id])
-            
-            conn.commit()
-            
-        conn.close()
+        # Force refresh all transaction data for this customer using Appwrite
+        transactions = appwrite_db.list_documents('transactions', [
+            Query.equal('business_id', business_id),
+            Query.equal('customer_id', customer_id),
+            Query.order_desc('created_at')
+        ])
+        
+        # Recalculate balance
+        credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
+        payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
+        new_balance = credit_total - payment_total
+        
+        # Update the stored balance
+        credit_records = appwrite_db.list_documents('customer_credits', [
+            Query.equal('business_id', business_id),
+            Query.equal('customer_id', customer_id),
+            Query.limit(1)
+        ])
+        
+        if credit_records:
+            appwrite_db.update_document('customer_credits', credit_records[0]['$id'], {
+                'current_balance': new_balance,
+                'updated_at': datetime.now().isoformat()
+            })
         
         flash(f'Customer data synced successfully! Found {len(transactions)} transactions. Balance: ₹{new_balance:.2f}', 'success')
         print(f"DEBUG: Synced customer {customer_id} - {len(transactions)} transactions, balance: {new_balance}")
@@ -1082,67 +1100,64 @@ def remind_all_customers():
         business_id = safe_uuid(session.get('business_id'))
         
         # Get business details
-        business_response = query_table('businesses', filters=[('id', 'eq', business_id)])
-        business = business_response.data[0] if business_response and business_response.data else {}
+        business = appwrite_db.get_document('businesses', business_id)
         business_name = business.get('name', 'Business')
         
         # Get all customers with balances
-        conn = psycopg2.connect(EXTERNAL_DATABASE_URL)
         customers_to_remind = []
         
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
-            # Get all customers with their phone numbers and balances
-            cursor.execute("""
-                SELECT c.id, c.name, c.phone_number
-                FROM customers c
-                JOIN customer_credits cc ON c.id = cc.customer_id
-                WHERE cc.business_id = %s AND c.phone_number IS NOT NULL AND c.phone_number != ''
-                ORDER BY c.name
-            """, [business_id])
-            
-            customers_data = cursor.fetchall()
-            
-            for customer in customers_data:
-                try:
-                    customer_id = customer['id']
-                    customer_name = customer.get('name', 'Customer')
-                    phone_number = customer.get('phone_number', '')
-                    
-                    # Calculate balance from transactions
-                    cursor.execute("""
-                        SELECT amount, transaction_type
-                        FROM transactions
-                        WHERE business_id = %s AND customer_id = %s
-                    """, [business_id, customer_id])
-                    
-                    transactions_data = cursor.fetchall()
-                    if not transactions_data:
-                        continue  # Skip customers with no transactions
-                    
-                    credit_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'credit'])
-                    payment_total = sum([float(t['amount']) for t in transactions_data if t['transaction_type'] == 'payment'])
-                    balance = credit_total - payment_total
-                    
-                    # Only include customers with positive balances
-                    if balance <= 0:
-                        continue
-                    
-                    # Clean phone number
-                    import re
-                    clean_phone = re.sub(r'\D', '', phone_number)
-                    
-                    # Add country code if not present (assuming Indian numbers)
-                    if clean_phone and not clean_phone.startswith('91'):
-                        if clean_phone.startswith('0'):
-                            clean_phone = '91' + clean_phone[1:]
-                        elif len(clean_phone) == 10:
-                            clean_phone = '91' + clean_phone
-                    
-                    if not clean_phone:
-                        continue
-                    
-                    # Generate reminder message
-                    message = f"""Hi {customer_name}! 🙏
+        # Get all customer credits for this business
+        customer_credits = appwrite_db.list_documents('customer_credits', [
+            Query.equal('business_id', business_id)
+        ])
+        
+        for credit in customer_credits:
+            try:
+                customer_id = credit.get('customer_id')
+                if not customer_id:
+                    continue
+                
+                # Get customer details
+                customer = appwrite_db.get_document('customers', customer_id)
+                customer_name = customer.get('name', 'Customer')
+                phone_number = customer.get('phone_number', '')
+                
+                if not phone_number:
+                    continue  # Skip customers without phone numbers
+                
+                # Calculate balance from transactions
+                transactions = appwrite_db.list_documents('transactions', [
+                    Query.equal('business_id', business_id),
+                    Query.equal('customer_id', customer_id)
+                ])
+                
+                if not transactions:
+                    continue  # Skip customers with no transactions
+                
+                credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
+                payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
+                balance = credit_total - payment_total
+                
+                # Only include customers with positive balances
+                if balance <= 0:
+                    continue
+                
+                # Clean phone number
+                import re
+                clean_phone = re.sub(r'\D', '', phone_number)
+                
+                # Add country code if not present (assuming Indian numbers)
+                if clean_phone and not clean_phone.startswith('91'):
+                    if clean_phone.startswith('0'):
+                        clean_phone = '91' + clean_phone[1:]
+                    elif len(clean_phone) == 10:
+                        clean_phone = '91' + clean_phone
+                
+                if not clean_phone:
+                    continue
+                
+                # Generate reminder message
+                message = f"""Hi {customer_name}! 🙏
 
 Your current balance with {business_name} is ₹{balance:,.2f}. 
 You can view your transaction history and make payments here: 
@@ -1151,32 +1166,30 @@ https://www.khatape.tech/business/{business_id}
 Thank you for your business! 😊
 
 - {business_name} Team"""
-                    
-                    # Create WhatsApp URL
-                    import urllib.parse
-                    encoded_message = urllib.parse.quote(message)
-                    whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
-                    
-                    customers_to_remind.append({
-                        'id': customer_id,
-                        'name': customer_name,
-                        'phone': f"+{clean_phone}",
-                        'balance': f"{balance:,.2f}",
-                        'whatsapp_url': whatsapp_url
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"Error processing customer {customer.get('name', 'Unknown')}: {str(e)}")
-                    continue
-        
-        conn.close()
+                
+                # Create WhatsApp URL
+                import urllib.parse
+                encoded_message = urllib.parse.quote(message)
+                whatsapp_url = f"https://wa.me/{clean_phone}?text={encoded_message}"
+                
+                customers_to_remind.append({
+                    'id': customer_id,
+                    'name': customer_name,
+                    'phone': f"+{clean_phone}",
+                    'balance': f"{balance:,.2f}",
+                    'whatsapp_url': whatsapp_url
+                })
+                
+            except Exception as e:
+                print(f"Error processing customer {customer.get('name', 'Unknown')}: {str(e)}")
+                continue
         
         return render_template('business/bulk_reminders.html', 
                              customers=customers_to_remind,
                              business=business)
             
     except Exception as e:
-        logger.error(f"Error generating bulk reminders: {str(e)}")
+        print(f"Error generating bulk reminders: {str(e)}")
         flash('Error loading reminder page. Please try again.', 'error')
         return redirect(url_for('business_customers'))
 

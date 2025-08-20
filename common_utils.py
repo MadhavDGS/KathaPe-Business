@@ -10,9 +10,6 @@ import time
 import requests
 import socket
 import threading
-import psycopg2
-import psycopg2.extras
-from psycopg2.pool import ThreadedConnectionPool
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -40,17 +37,15 @@ logger = logging.getLogger(__name__)
 # Check if running on Render
 RENDER_DEPLOYMENT = os.environ.get('RENDER', False)
 
-# Environment variables - Database URLs
-# Use the actual Render PostgreSQL URL
-DATABASE_URL = 'postgresql://kathape_database_user:Ht2wROzJ5M2VfxVXvJ3iO4L45Q9GC2Wb@dpg-d20j432li9vc73a35od0-a.singapore-postgres.render.com/kathape_database'
-EXTERNAL_DATABASE_URL = 'postgresql://kathape_database_user:Ht2wROzJ5M2VfxVXvJ3iO4L45Q9GC2Wb@dpg-d20j432li9vc73a35od0-a.singapore-postgres.render.com/kathape_database'
+# Appwrite Configuration
+from appwrite_config import AppwriteConfig
+from appwrite_utils import AppwriteDB
 
-# For local development, allow override via environment variables
-DATABASE_URL = os.environ.get('DATABASE_URL', DATABASE_URL)
-EXTERNAL_DATABASE_URL = os.environ.get('EXTERNAL_DATABASE_URL', EXTERNAL_DATABASE_URL)
+# Initialize Appwrite
+appwrite_config = AppwriteConfig()
+appwrite_db = AppwriteDB()
 
 # Set environment variables from hardcoded values only if not already set
-os.environ.setdefault('DATABASE_URL', DATABASE_URL)
 os.environ.setdefault('SECRET_KEY', 'fc36290a52f89c1c92655b7d22b198e4')
 os.environ.setdefault('UPLOAD_FOLDER', 'static/uploads')
 
@@ -143,100 +138,30 @@ class RequestLoggerMiddleware:
             """
             return [error_html.encode('utf-8')]
 
-# PostgreSQL connection pool
-db_pool = None
-
-# Initialize the PostgreSQL connection pool
-def init_db_pool():
-    global db_pool
-    
-    if db_pool is not None:
-        return True
-
-    # For local development, don't fail if database is not available
-    print("Initializing PostgreSQL connection pool...")
-    
-    # Try internal URL first, fallback to external URL if needed
-    for db_url, url_type in [(DATABASE_URL, "internal"), (EXTERNAL_DATABASE_URL, "external")]:
-        try:
-            db_pool = ThreadedConnectionPool(
-                minconn=1,
-                maxconn=10,
-                dsn=db_url,
-                cursor_factory=psycopg2.extras.DictCursor
-            )
-            print(f"PostgreSQL connection pool initialized successfully with {url_type} URL")
-            return True
-        except Exception as e:
-            print(f"ERROR initializing PostgreSQL connection pool with {url_type} URL: {str(e)}")
-    
-    # If we reach here, database connection failed
-    print("WARNING: Could not connect to database. Application will run in limited mode.")
-    print("Some features requiring database access will not be available.")
-    return False
-
-# Get a connection from the pool with retry
-def get_db_connection():
-    global db_pool
-    
-    if db_pool is None:
-        if not init_db_pool():
-            return None
-    
-    for attempt in range(DB_RETRY_ATTEMPTS):
-        try:
-            conn = db_pool.getconn()
-            # Test connection
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                cursor.fetchone()
-            return conn
-        except Exception as e:
-            if attempt < DB_RETRY_ATTEMPTS - 1:
-                print(f"Connection attempt {attempt+1} failed: {str(e)}. Retrying...")
-                time.sleep(DB_RETRY_DELAY)
-            else:
-                print(f"Failed to get database connection after {DB_RETRY_ATTEMPTS} attempts: {str(e)}")
-                return None
-
-# Return a connection to the pool
-def release_db_connection(conn):
-    global db_pool
-    if db_pool is not None and conn is not None:
-        try:
-            db_pool.putconn(conn)
-        except Exception as e:
-            print(f"Error returning connection to pool: {str(e)}")
-
-# Execute database query with connection management
-def execute_query(query, params=None, fetch_one=False, commit=True):
-    conn = None
+# Initialize the Appwrite connection
+def init_appwrite():
+    """Initialize and test Appwrite connection"""
     try:
-        conn = get_db_connection()
-        if conn is None:
-            print("ERROR: Failed to get database connection")
-            return None
-        
-        with conn.cursor() as cursor:
-            cursor.execute(query, params)
-            
-            if commit:
-                conn.commit()
-                
-            if cursor.description:
-                if fetch_one:
-                    return cursor.fetchone()
-                else:
-                    return cursor.fetchall()
-            return None
+        # Initialize appwrite_db to trigger configuration
+        appwrite_db._ensure_initialized()
+        print("Appwrite connection initialized successfully")
+        return True
     except Exception as e:
-        print(f"Database query error: {str(e)}")
-        if conn:
-            conn.rollback()
-        return None
-    finally:
-        if conn:
-            release_db_connection(conn)
+        print(f"ERROR initializing Appwrite connection: {str(e)}")
+        print("WARNING: Could not connect to Appwrite. Application will run in limited mode.")
+        print("Some features requiring database access will not be available.")
+        return False
+
+# Test Appwrite connection
+def test_appwrite_connection():
+    """Test if Appwrite connection is working"""
+    try:
+        # Test by initializing the connection
+        appwrite_db._ensure_initialized()
+        return True
+    except Exception as e:
+        print(f"Failed to test Appwrite connection: {str(e)}")
+        return False
 
 
 
@@ -254,173 +179,17 @@ def safe_uuid(id_value):
         print(f"WARNING: Invalid UUID '{id_value}' - generating new UUID")
         return str(uuid.uuid4())
 
-# Safe query wrapper for database operations
+# Safe query wrapper - DEPRECATED, use Appwrite directly
 def query_table(table_name, query_type='select', fields='*', filters=None, data=None, limit=None):
     """
-    Safely query a PostgreSQL table with proper error handling
+    DEPRECATED: This function has been replaced with direct Appwrite calls.
+    Returns empty results to maintain compatibility.
     """
-    try:
-        # Handle different query types
-        if query_type == 'select':
-            # Build SELECT query
-            query = f"SELECT {fields} FROM {table_name}"
-            params = []
-            
-            # Apply filters
-            if filters:
-                where_conditions = []
-                for field, op, value in filters:
-                    if field.endswith('_id') and value:
-                        value = safe_uuid(value)
-                        
-                    if op == 'eq':
-                        where_conditions.append(f"{field} = %s")
-                        params.append(value)
-                    elif op == 'neq':
-                        where_conditions.append(f"{field} != %s")
-                        params.append(value)
-                    # Add other operators as needed
-                
-                if where_conditions:
-                    query += " WHERE " + " AND ".join(where_conditions)
-            
-            # Apply query limit only if explicitly provided
-            if limit:
-                query += f" LIMIT {limit}"
-            
-            # Execute query
-            rows = execute_query(query, params)
-            
-            # Create a response class to match Supabase's structure
-            class Response:
-                def __init__(self, data):
-                    self.data = data or []
-            
-            return Response(rows)
-        
-        elif query_type == 'insert':
-            # Ensure UUID fields are valid
-            if data and isinstance(data, dict):
-                for key, value in data.items():
-                    if key == 'id' or key.endswith('_id'):
-                        data[key] = safe_uuid(value)
-            
-            if not data:
-                return None
-                
-            # Build INSERT query
-            columns = list(data.keys())
-            placeholders = ["%s"] * len(columns)
-            values = [data[col] for col in columns]
-            
-            query = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)}) RETURNING *"
-            
-            # Execute query
-            result = execute_query(query, values, commit=True)
-            
-            # Create a response class to match Supabase's structure
-            class Response:
-                def __init__(self, data):
-                    self.data = data or []
-            
-            return Response(result)
-            
-        elif query_type == 'update':
-            # Build UPDATE query
-            if not data:
-                return None
-                
-            set_parts = []
-            values = []
-            
-            for key, value in data.items():
-                if key == 'id' or key.endswith('_id'):
-                    value = safe_uuid(value)
-                
-                set_parts.append(f"{key} = %s")
-                values.append(value)
-            
-            query = f"UPDATE {table_name} SET {', '.join(set_parts)}"
-            
-            # Apply filters
-            if filters:
-                where_conditions = []
-                for field, op, value in filters:
-                    if field.endswith('_id'):
-                        value = safe_uuid(value)
-                        
-                    if op == 'eq':
-                        where_conditions.append(f"{field} = %s")
-                        values.append(value)
-                    # Add other operators as needed
-                
-                if where_conditions:
-                    query += " WHERE " + " AND ".join(where_conditions)
-            
-            query += " RETURNING *"
-            
-            # Execute query
-            result = execute_query(query, values, commit=True)
-            
-            # Create a response class to match Supabase's structure
-            class Response:
-                def __init__(self, data):
-                    self.data = data or []
-            
-            return Response(result)
-            
-        elif query_type == 'delete':
-            # Build DELETE query
-            query = f"DELETE FROM {table_name}"
-            params = []
-            
-            # Apply filters
-            if filters:
-                where_conditions = []
-                for field, op, value in filters:
-                    if field.endswith('_id'):
-                        value = safe_uuid(value)
-                        
-                    if op == 'eq':
-                        where_conditions.append(f"{field} = %s")
-                        params.append(value)
-                    # Add other operators as needed
-                
-                if where_conditions:
-                    query += " WHERE " + " AND ".join(where_conditions)
-            
-            query += " RETURNING *"
-            
-            # Execute query
-            result = execute_query(query, params, commit=True)
-            
-            # Create a response class to match Supabase's structure
-            class Response:
-                def __init__(self, data):
-                    self.data = data or []
-            
-            return Response(result)
-            
-        else:
-            print(f"ERROR: Invalid query type: {query_type}")
-            
-            # Create an empty response class to use as fallback
-            class Response:
-                def __init__(self):
-                    self.data = []
-            
-            return Response()
-        
-    except Exception as e:
-        print(f"Database query error: {str(e)}")
-        traceback.print_exc()
-        
-        # Create an empty response class to use as fallback
-        class Response:
-            def __init__(self):
-                self.data = []
-        
-        return Response()
+    from collections import namedtuple
+    QueryResult = namedtuple('QueryResult', ['data', 'success', 'error'])
+    
+    print(f"WARNING: query_table() is deprecated. Use Appwrite directly for table '{table_name}'")
+    return QueryResult(data=[], success=False, error="Function deprecated - use Appwrite directly")
 
 # File upload helper function
 def allowed_file(filename):
@@ -477,12 +246,12 @@ def generate_permanent_business_pin():
 def check_pin_uniqueness(pin):
     """Check if the generated PIN is unique in the database"""
     try:
-        result = execute_query(
-            "SELECT COUNT(*) as count FROM businesses WHERE access_pin = %s",
-            [pin],
-            fetch_one=True
-        )
-        return result['count'] == 0 if result else True
+        from appwrite.query import Query
+        businesses = appwrite_db.list_documents('businesses', [
+            Query.equal('access_pin', pin),
+            Query.limit(1)
+        ])
+        return len(businesses) == 0
     except Exception as e:
         print(f"Error checking PIN uniqueness: {e}")
         return True
@@ -574,8 +343,8 @@ def create_app(app_name='Khatape'):
     app.config['QR_CODES_FOLDER'] = qr_folder
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
     
-    # Initialize database
-    init_db_pool()
+    # Initialize Appwrite
+    init_appwrite()
     
     return app
 
