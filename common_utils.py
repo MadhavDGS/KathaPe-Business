@@ -10,6 +10,10 @@ import time
 import requests
 import socket
 import threading
+<<<<<<< HEAD
+=======
+# Appwrite utilities will be imported when needed to avoid circular imports
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -37,6 +41,7 @@ logger = logging.getLogger(__name__)
 # Check if running on Render
 RENDER_DEPLOYMENT = os.environ.get('RENDER', False)
 
+<<<<<<< HEAD
 # Appwrite Configuration
 from appwrite_config import AppwriteConfig
 from appwrite_utils import AppwriteDB
@@ -46,6 +51,19 @@ appwrite_config = AppwriteConfig()
 appwrite_db = AppwriteDB()
 
 # Set environment variables from hardcoded values only if not already set
+=======
+# Environment variables - Appwrite Configuration
+APPWRITE_ENDPOINT = os.environ.get('APPWRITE_ENDPOINT', 'https://cloud.appwrite.io/v1')
+APPWRITE_PROJECT_ID = os.environ.get('APPWRITE_PROJECT_ID')
+APPWRITE_API_KEY = os.environ.get('APPWRITE_API_KEY')
+APPWRITE_DATABASE_ID = os.environ.get('APPWRITE_DATABASE_ID', 'kathape_business')
+
+# Set environment variables
+os.environ.setdefault('APPWRITE_ENDPOINT', APPWRITE_ENDPOINT)
+os.environ.setdefault('APPWRITE_PROJECT_ID', APPWRITE_PROJECT_ID or '')
+os.environ.setdefault('APPWRITE_API_KEY', APPWRITE_API_KEY or '')
+os.environ.setdefault('APPWRITE_DATABASE_ID', APPWRITE_DATABASE_ID)
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
 os.environ.setdefault('SECRET_KEY', 'fc36290a52f89c1c92655b7d22b198e4')
 os.environ.setdefault('UPLOAD_FOLDER', 'static/uploads')
 
@@ -138,6 +156,7 @@ class RequestLoggerMiddleware:
             """
             return [error_html.encode('utf-8')]
 
+<<<<<<< HEAD
 # Initialize the Appwrite connection
 def init_appwrite():
     """Initialize and test Appwrite connection"""
@@ -161,24 +180,72 @@ def test_appwrite_connection():
         return True
     except Exception as e:
         print(f"Failed to test Appwrite connection: {str(e)}")
+=======
+# PostgreSQL connection pool
+db_pool = None
+
+# Initialize the PostgreSQL connection pool
+# Appwrite Database Connection Functions
+
+def test_db_connection():
+    """Test Appwrite connection"""
+    try:
+        from appwrite_utils import db
+        # Try to list a collection to test connection
+        result = db.list_documents('users', limit=1)
+        print("Appwrite connection successful!")
+        return True
+    except Exception as e:
+        print(f"Appwrite connection failed: {str(e)}")
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
         return False
 
+def init_db_pool():
+    """Initialize Appwrite connection (compatibility function)"""
+    return test_db_connection()
 
+def get_db_connection():
+    """Get Appwrite database instance (compatibility function)"""
+    from appwrite_utils import db
+    return db
 
-# Utility function to ensure valid UUIDs
-def safe_uuid(id_value):
-    """Ensure a value is a valid UUID string or generate a new one"""
-    if not id_value:
-        return str(uuid.uuid4())
+def execute_query(operation, collection_name, data=None, filters=None, document_id=None, limit=100):
+    """
+    Execute Appwrite operations (replacement for PostgreSQL execute_query)
     
+    Args:
+        operation: 'create', 'read', 'update', 'delete', 'list'
+        collection_name: Appwrite collection name
+        data: Data for create/update operations
+        filters: Filters for query operations
+        document_id: Document ID for specific operations
+        limit: Limit for list operations
+    """
     try:
-        # Test if it's a valid UUID
-        uuid.UUID(str(id_value))
-        return str(id_value)
-    except (ValueError, TypeError, AttributeError) as e:
-        print(f"WARNING: Invalid UUID '{id_value}' - generating new UUID")
-        return str(uuid.uuid4())
+        from appwrite_utils import db
+        
+        if operation == 'create':
+            return db.create_document(collection_name, data, document_id)
+        elif operation == 'read':
+            return db.get_document(collection_name, document_id)
+        elif operation == 'update':
+            return db.update_document(collection_name, document_id, data)
+        elif operation == 'delete':
+            return db.delete_document(collection_name, document_id)
+        elif operation == 'list':
+            if filters:
+                return db.query_documents(collection_name, filters, limit)
+            else:
+                return db.list_documents(collection_name, limit=limit)
+        else:
+            print(f"Unknown operation: {operation}")
+            return None
+            
+    except Exception as e:
+        print(f"Appwrite operation error: {str(e)}")
+        return None
 
+<<<<<<< HEAD
 # Safe query wrapper - DEPRECATED, use Appwrite directly
 def query_table(table_name, query_type='select', fields='*', filters=None, data=None, limit=None):
     """
@@ -192,6 +259,146 @@ def query_table(table_name, query_type='select', fields='*', filters=None, data=
     return QueryResult(data=[], success=False, error="Function deprecated - use Appwrite directly")
 
 # File upload helper function
+=======
+
+
+# Utility function to ensure valid document IDs for Appwrite
+def safe_uuid(id_value):
+    """Ensure a value is a valid document ID or generate a new one"""
+    if not id_value or id_value == 'None':
+        from appwrite_config import safe_uuid_appwrite
+        return safe_uuid_appwrite(None)
+    
+    # Appwrite document IDs can be custom strings, so just ensure it's a string
+    return str(id_value)
+
+# Safe query wrapper for Appwrite operations
+def query_table(collection_name, query_type='select', fields='*', filters=None, data=None, limit=None):
+    """
+    Safely query an Appwrite collection with proper error handling
+    Replacement for PostgreSQL query_table function
+    """
+    try:
+        from appwrite_utils import db
+        
+        # Handle different query types
+        if query_type == 'select':
+            # Convert PostgreSQL-style filters to Appwrite format
+            appwrite_filters = {}
+            if filters:
+                for filter_item in filters:
+                    if len(filter_item) >= 3:
+                        field, op, value = filter_item[0], filter_item[1], filter_item[2]
+                        
+                        if op == 'eq':
+                            appwrite_filters[field] = value
+                        elif op == 'gt':
+                            appwrite_filters[field] = {'$gt': value}
+                        elif op == 'gte':
+                            appwrite_filters[field] = {'$gte': value}
+                        elif op == 'lt':
+                            appwrite_filters[field] = {'$lt': value}
+                        elif op == 'lte':
+                            appwrite_filters[field] = {'$lte': value}
+                        elif op == 'neq':
+                            appwrite_filters[field] = {'$ne': value}
+            
+            # Apply limit
+            query_limit = limit if limit else 50
+            
+            # Execute query
+            if appwrite_filters:
+                documents = db.query_documents(collection_name, appwrite_filters, query_limit)
+            else:
+                documents = db.list_documents(collection_name, limit=query_limit)
+            
+            # Create a response class to match existing structure
+            class Response:
+                def __init__(self, data):
+                    self.data = data or []
+            
+            return Response(documents)
+            
+        elif query_type == 'insert':
+            if not data:
+                return None
+                
+            # Create document
+            result = db.create_document(collection_name, data)
+            
+            class Response:
+                def __init__(self, data):
+                    self.data = [data] if data else []
+            
+            return Response(result)
+            
+        elif query_type == 'update':
+            if not data or not filters:
+                return None
+            
+            # Find the document to update using filters
+            appwrite_filters = {}
+            for filter_item in filters:
+                if len(filter_item) >= 3:
+                    field, op, value = filter_item[0], filter_item[1], filter_item[2]
+                    if op == 'eq':
+                        appwrite_filters[field] = value
+            
+            # Get the document first to find its ID
+            documents = db.query_documents(collection_name, appwrite_filters, 1)
+            if not documents:
+                return None
+            
+            document_id = documents[0]['$id']
+            result = db.update_document(collection_name, document_id, data)
+            
+            class Response:
+                def __init__(self, data):
+                    self.data = [data] if data else []
+            
+            return Response(result)
+            
+        elif query_type == 'delete':
+            if not filters:
+                return None
+            
+            # Find the document to delete using filters
+            appwrite_filters = {}
+            for filter_item in filters:
+                if len(filter_item) >= 3:
+                    field, op, value = filter_item[0], filter_item[1], filter_item[2]
+                    if op == 'eq':
+                        appwrite_filters[field] = value
+            
+            # Get the document first to find its ID
+            documents = db.query_documents(collection_name, appwrite_filters, 1)
+            if not documents:
+                return None
+            
+            document_id = documents[0]['$id']
+            success = db.delete_document(collection_name, document_id)
+            
+            class Response:
+                def __init__(self, data):
+                    self.data = data or []
+            
+            return Response([{'success': success}])
+            
+        else:
+            print(f"Unsupported query type: {query_type}")
+            return None
+            
+    except Exception as e:
+        print(f"Query error: {str(e)}")
+        
+        # Create a response class for errors
+        class Response:
+            def __init__(self, data):
+                self.data = data or []
+        
+        return Response([])
+        # File upload helper function
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
 def allowed_file(filename):
     """Check if a file has an allowed extension"""
     allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
@@ -246,11 +453,19 @@ def generate_permanent_business_pin():
 def check_pin_uniqueness(pin):
     """Check if the generated PIN is unique in the database"""
     try:
+<<<<<<< HEAD
         from appwrite.query import Query
         businesses = appwrite_db.list_documents('businesses', [
             Query.equal('access_pin', pin),
             Query.limit(1)
         ])
+=======
+        # Import here to avoid circular imports
+        from appwrite_utils import db
+        
+        # Query businesses collection for existing PIN
+        businesses = db.query_documents('businesses', {'access_pin': pin}, limit=1)
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
         return len(businesses) == 0
     except Exception as e:
         print(f"Error checking PIN uniqueness: {e}")

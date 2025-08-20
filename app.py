@@ -25,6 +25,7 @@ def bill_image(transaction_id):
         transaction_id = safe_uuid(transaction_id)
         
         # Get the base64 image data from Appwrite
+<<<<<<< HEAD
         from appwrite_utils import get_transaction_by_id
         transaction = get_transaction_by_id(transaction_id)
         
@@ -32,6 +33,21 @@ def bill_image(transaction_id):
             return Response("Bill image not found", status=404)
         
         img_data = transaction['receipt_image_url']
+=======
+        from appwrite_utils import db
+        
+        # Get transaction document
+        transaction = db.get_document('transactions', transaction_id)
+        
+        if not transaction or transaction.get('business_id') != business_id:
+            return Response("Bill image not found", status=404)
+        
+        receipt_image_url = transaction.get('receipt_image_url')
+        if not receipt_image_url:
+            return Response("Bill image not found", status=404)
+        
+        img_data = receipt_image_url
+>>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
         
         # Handle data URL format (data:image/jpeg;base64,...)
         if img_data.startswith('data:image/'):
