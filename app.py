@@ -14,6 +14,7 @@ appwrite_db = AppwriteDB()
 
 # Create the business Flask app
 business_app = create_app('Khatape-Business')
+app = business_app
 
 @business_app.route('/bill_image/<transaction_id>')
 @login_required
