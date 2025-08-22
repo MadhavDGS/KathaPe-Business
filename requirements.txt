@@ -1,11 +1,7 @@
 # Business Flask App Requirements
 Flask==2.2.3
 Werkzeug==2.2.3
-<<<<<<< HEAD
 appwrite==11.1.0
-=======
-appwrite==4.0.0
->>>>>>> 64f183b76de57e07d1178b54e0a01fc6ea9fbb6a
 requests==2.31.0
 python-dotenv==1.0.0
 qrcode==7.4.2
