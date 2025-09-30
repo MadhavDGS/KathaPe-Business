@@ -3,14 +3,102 @@ Business Flask Application - Handles all business-related operations
 """
 from common_utils import *
 import base64
-from flask import Response
+import os
+from flask import Response, jsonify
 
 # Import Appwrite utilities
 from appwrite_utils import AppwriteDB
 from appwrite.query import Query
 
+# Import Cloudinary
+import cloudinary
+import cloudinary.uploader
+from cloudinary.utils import cloudinary_url
+
+# Initialize Cloudinary
+cloudinary.config(
+    cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.environ.get('CLOUDINARY_API_KEY'),
+    api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+    secure=True
+)
+
 # Initialize Appwrite DB
 appwrite_db = AppwriteDB()
+
+# Cloudinary helper functions
+def get_cloudinary_url(public_id, transformation=None):
+    """Generate Cloudinary URL with optional transformations"""
+    if not public_id:
+        return None
+    
+    try:
+        # Get Cloudinary cloud name from environment
+        cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dji2izeis')
+        
+        # Use the SDK if available, otherwise construct manually
+        try:
+            if transformation:
+                url, _ = cloudinary_url(public_id, **transformation)
+            else:
+                # Default transformation for bill images
+                url, _ = cloudinary_url(public_id, 
+                                      width=800, 
+                                      height=800, 
+                                      crop="limit", 
+                                      quality="auto",
+                                      format="auto")
+            return url
+        except Exception as sdk_error:
+            print(f"Cloudinary SDK error, falling back to manual URL construction: {str(sdk_error)}")
+            
+            # Manual URL construction as fallback
+            base_url = f"https://res.cloudinary.com/{cloud_name}/image/upload"
+            
+            # Add transformations if needed
+            if transformation:
+                transform_parts = []
+                if 'width' in transformation:
+                    transform_parts.append(f"w_{transformation['width']}")
+                if 'height' in transformation:
+                    transform_parts.append(f"h_{transformation['height']}")
+                if 'crop' in transformation:
+                    transform_parts.append(f"c_{transformation['crop']}")
+                if 'quality' in transformation:
+                    transform_parts.append(f"q_{transformation['quality']}")
+                if 'format' in transformation:
+                    transform_parts.append(f"f_{transformation['format']}")
+                
+                if transform_parts:
+                    transform_str = ",".join(transform_parts)
+                    return f"{base_url}/{transform_str}/{public_id}"
+            
+            # Default transformation for bill images (manual)
+            return f"{base_url}/c_limit,h_800,q_auto,w_800/{public_id}"
+            
+    except Exception as e:
+        print(f"Error generating Cloudinary URL: {str(e)}")
+        return None
+
+def extract_public_id_from_cloudinary_url(cloudinary_url_str):
+    """Extract public ID from Cloudinary URL"""
+    try:
+        # Example URL: https://res.cloudinary.com/dji2izeis/image/upload/v1234567890/bills/transaction_id.jpg
+        if '/upload/' in cloudinary_url_str:
+            parts = cloudinary_url_str.split('/upload/')
+            if len(parts) > 1:
+                # Get everything after /upload/v123456789/ or /upload/
+                path_part = parts[1]
+                # Remove version if present (v1234567890)
+                if path_part.startswith('v') and '/' in path_part:
+                    path_part = path_part.split('/', 1)[1]
+                # Remove file extension
+                public_id = path_part.rsplit('.', 1)[0]
+                return public_id
+        return None
+    except Exception as e:
+        print(f"Error extracting public ID: {str(e)}")
+        return None
 
 # Create the business Flask app
 business_app = create_app('Khatape-Business')
@@ -20,24 +108,67 @@ app = business_app
 @login_required
 @business_required
 def bill_image(transaction_id):
-    """Serve bill image from base64 string in receipt_image_url column"""
+    """Serve bill image from Cloudinary URL or legacy base64 data"""
     try:
         business_id = safe_uuid(session.get('business_id'))
         transaction_id = safe_uuid(transaction_id)
         
-        # Get the base64 image data from Appwrite
-        from appwrite_utils import get_transaction_by_id
-        transaction = get_transaction_by_id(transaction_id)
+        # Get transaction from Appwrite
+        transaction = appwrite_db.get_document('transactions', transaction_id)
         
-        if not transaction or transaction.get('business_id') != business_id or not transaction.get('receipt_image_url'):
+        if not transaction or transaction.get('business_id') != business_id:
             return Response("Bill image not found", status=404)
         
-        img_data = transaction['receipt_image_url']
+        receipt_url = transaction.get('receipt_image_url', '')
+        print(f"BILL_IMAGE_DEBUG_NEW_VERSION: Transaction {transaction_id}")
+        print(f"BILL_IMAGE_DEBUG_NEW_VERSION: Receipt URL length: {len(receipt_url) if receipt_url else 0}")
+        print(f"BILL_IMAGE_DEBUG_NEW_VERSION: Receipt URL preview: {receipt_url[:200]}...")
+        print(f"BILL_IMAGE_DEBUG_NEW_VERSION: Receipt URL type: {type(receipt_url)}")
         
-        # Handle data URL format (data:image/jpeg;base64,...)
-        if img_data.startswith('data:image/'):
-            # Remove data URL prefix if present
-            header, img_data = img_data.split(',', 1)
+        if not receipt_url:
+            print("BILL_IMAGE_DEBUG: No receipt_url found")
+            return Response("No bill image found", status=404)
+        
+        # Check if it's a full Cloudinary URL
+        if receipt_url.startswith('https://res.cloudinary.com/') or receipt_url.startswith('http://res.cloudinary.com/'):
+            # It's a Cloudinary URL, redirect to it
+            print(f"BILL_IMAGE_DEBUG: Redirecting to Cloudinary URL")
+            return redirect(receipt_url)
+        
+        # Check if it's a Cloudinary public ID (like bill_receipts/image_name)
+        elif receipt_url and not receipt_url.startswith('data:'):
+            # Use our helper function to generate the full Cloudinary URL
+            print(f"BILL_IMAGE_DEBUG_NEW_DIRECT_SERVING: Treating as Cloudinary public ID: {receipt_url}")
+            cloudinary_url = get_cloudinary_url(receipt_url)
+            if cloudinary_url:
+                print(f"BILL_IMAGE_DEBUG: Fetching image from Cloudinary URL: {cloudinary_url}")
+                
+                # Fetch the image from Cloudinary and serve it directly
+                try:
+                    import requests
+                    response = requests.get(cloudinary_url, timeout=10)
+                    if response.status_code == 200:
+                        # Determine content type from response headers
+                        content_type = response.headers.get('content-type', 'image/jpeg')
+                        print(f"BILL_IMAGE_DEBUG: Successfully fetched image, serving {len(response.content)} bytes as {content_type}")
+                        return Response(response.content, mimetype=content_type)
+                    else:
+                        print(f"BILL_IMAGE_DEBUG: Cloudinary returned status {response.status_code}")
+                        return Response("Image not found on Cloudinary", status=404)
+                except Exception as fetch_error:
+                    print(f"BILL_IMAGE_DEBUG: Error fetching from Cloudinary: {str(fetch_error)}")
+                    # Fallback to redirect if fetch fails
+                    print(f"BILL_IMAGE_DEBUG: Falling back to redirect: {cloudinary_url}")
+                    return redirect(cloudinary_url)
+            else:
+                print(f"BILL_IMAGE_DEBUG: Failed to generate Cloudinary URL from public ID")
+                return Response("Failed to generate image URL", status=415)
+        
+        # Legacy support for base64 images
+        elif receipt_url.startswith('data:image/'):
+            # Handle data URL format (data:image/jpeg;base64,...)
+            print(f"BILL_IMAGE_DEBUG: Processing data: URL format")
+            header, img_data = receipt_url.split(',', 1)
             if 'jpeg' in header or 'jpg' in header:
                 mime_type = 'image/jpeg'
             elif 'png' in header:
@@ -45,47 +176,30 @@ def bill_image(transaction_id):
             elif 'webp' in header:
                 mime_type = 'image/webp'
             else:
-                mime_type = 'image/jpeg'  # Default fallback
-        else:
-            # Assume it's just base64 data without prefix
-            mime_type = 'image/jpeg'  # Default to JPEG
+                mime_type = 'image/jpeg'
+            
+            try:
+                image_bytes = base64.b64decode(img_data)
+                print(f"BILL_IMAGE_DEBUG: Successfully decoded data: URL, returning {len(image_bytes)} bytes")
+                return Response(image_bytes, mimetype=mime_type)
+            except Exception as decode_error:
+                print(f"BILL_IMAGE_DEBUG: Error decoding base64 image: {str(decode_error)}")
+                return Response("Invalid image data", status=415)
         
-        try:
-            # Decode base64 string to bytes
-            image_bytes = base64.b64decode(img_data)
-            return Response(image_bytes, mimetype=mime_type)
-        except Exception as decode_error:
-            print(f"Error decoding base64 image: {str(decode_error)}")
-            return Response("Invalid image data", status=415)
+        else:
+            # Try to decode as plain base64
+            print(f"BILL_IMAGE_DEBUG: Trying to decode as plain base64")
+            try:
+                image_bytes = base64.b64decode(receipt_url)
+                print(f"BILL_IMAGE_DEBUG: Successfully decoded plain base64, returning {len(image_bytes)} bytes")
+                return Response(image_bytes, mimetype='image/jpeg')
+            except Exception as e:
+                print(f"BILL_IMAGE_DEBUG: Error decoding plain base64: {str(e)}")
+                return Response("Invalid image format", status=415)
             
     except Exception as e:
         print(f"Error serving bill image: {str(e)}")
         return Response("Server error", status=500)
-        conn.close()
-        if not result or not result['receipt_image_url']:
-            return Response(status=404)
-        # Try to detect image type
-        img_data = result['receipt_image_url']
-        if img_data.startswith('data:image/'):
-            # Remove data URL prefix if present
-            header, img_data = img_data.split(',', 1)
-            if 'jpeg' in header:
-                mime = 'image/jpeg'
-            elif 'png' in header:
-                mime = 'image/png'
-            else:
-                mime = 'application/octet-stream'
-        else:
-            # Default to jpeg
-            mime = 'image/jpeg'
-        try:
-            image_bytes = base64.b64decode(img_data)
-        except Exception:
-            return Response(status=415)
-        return Response(image_bytes, mimetype=mime)
-    except Exception as e:
-        print(f"Error serving bill image: {str(e)}")
-        return Response(status=500)
 
 @business_app.template_filter('datetime')
 def datetime_filter(value, format='%d %b %Y, %I:%M %p'):
@@ -102,6 +216,27 @@ def currency_filter(value):
         return f"₹{amount:,.2f}"
     except (ValueError, TypeError):
         return "₹0.00"
+
+@business_app.template_filter('cloudinary_thumb')
+def cloudinary_thumb_filter(image_url, width=200, height=200):
+    """Generate Cloudinary thumbnail URL"""
+    if not image_url or not image_url.startswith('https://res.cloudinary.com/'):
+        return image_url
+    
+    try:
+        public_id = extract_public_id_from_cloudinary_url(image_url)
+        if public_id:
+            return get_cloudinary_url(public_id, {
+                'width': width,
+                'height': height,
+                'crop': 'fill',
+                'quality': 'auto',
+                'format': 'auto'
+            })
+    except Exception as e:
+        print(f"Error generating thumbnail: {str(e)}")
+    
+    return image_url
 
 # Business routes
 @business_app.route('/')
@@ -557,7 +692,7 @@ def add_customer():
                     'phone_number': phone,
                     'created_at': datetime.now().isoformat()
                 }
-                customer = appwrite_db.create_document('customers', 'unique()', customer_data)
+                customer = appwrite_db.create_document('customers', customer_data)
                 customer_id = customer['$id']
                 print(f"DEBUG: Created new customer with ID: {customer_id}")
                 
@@ -577,7 +712,7 @@ def add_customer():
                             'password': 'devi123',
                             'created_at': datetime.now().isoformat()
                         }
-                        user_result = appwrite_db.create_document('users', 'unique()', user_data)
+                        user_result = appwrite_db.create_document('users', user_data)
                         
                         if user_result:
                             print(f"DEBUG: Created customer user account for {phone} with password 'devi123'")
@@ -609,7 +744,7 @@ def add_customer():
                     'created_at': datetime.now().isoformat(),
                     'updated_at': datetime.now().isoformat()
                 }
-                appwrite_db.create_document('customer_credits', 'unique()', credit_data)
+                appwrite_db.create_document('customer_credits', credit_data)
                 print(f"DEBUG: Created credit relationship for customer {customer_id} with business {business_id}")
             
             flash('Customer added successfully! Customer can now login with phone number and password: devi123', 'success')
@@ -646,18 +781,42 @@ def business_transactions(customer_id):
             return redirect(url_for('business_transactions', customer_id=customer_id))
         
         try:
+            # Handle file upload to Cloudinary
+            receipt_image_url = None
+            if 'receipt' in request.files:
+                file = request.files['receipt']
+                if file and file.filename:
+                    try:
+                        # Upload to Cloudinary
+                        upload_result = cloudinary.uploader.upload(
+                            file,
+                            folder="bills",
+                            public_id=f"bill_{business_id}_{customer_id}_{int(datetime.now().timestamp())}",
+                            resource_type="image",
+                            overwrite=True
+                        )
+                        receipt_image_url = upload_result.get('secure_url')
+                        print(f"DEBUG: Uploaded bill image to Cloudinary: {receipt_image_url}")
+                    except Exception as upload_error:
+                        print(f"Error uploading to Cloudinary: {str(upload_error)}")
+            
             # Create transaction
             transaction_data = {
-                'business_id': business_id,
-                'customer_id': customer_id,
+                'business_id': str(business_id),
+                'customer_id': str(customer_id),
                 'amount': amount,
                 'transaction_type': transaction_type,
                 'notes': notes,
                 'created_at': datetime.now().isoformat(),
-                'created_by': session.get('user_id')
+                'created_by': str(session.get('user_id'))
             }
             
-            result = appwrite_db.create_document('transactions', 'unique()', transaction_data)
+            # Add receipt image URL if available
+            if receipt_image_url:
+                transaction_data['receipt_image_url'] = receipt_image_url
+            
+            print(f"DEBUG: Creating transaction with data: {transaction_data}")
+            result = appwrite_db.create_document('transactions', transaction_data)
             
             if result:
                 # Update customer balance in customer_credits table
@@ -696,7 +855,7 @@ def business_transactions(customer_id):
                             'created_at': datetime.now().isoformat(),
                             'updated_at': datetime.now().isoformat()
                         }
-                        appwrite_db.create_document('customer_credits', 'unique()', credit_data)
+                        appwrite_db.create_document('customer_credits', credit_data)
                         print(f"Created new customer credit record with balance: {initial_balance}")
                 
                 except Exception as balance_error:
@@ -717,15 +876,21 @@ def business_transactions(customer_id):
     customer = appwrite_db.get_document('customers', customer_id)
     
     # Get current balance
-    credit_docs = appwrite_db.query_documents('customer_credits', [
+    credit_docs = appwrite_db.list_documents('customer_credits', [
         Query.equal('business_id', business_id),
         Query.equal('customer_id', customer_id)
     ])
     credit_info = credit_docs[0] if credit_docs else {}
     
-    customer['current_balance'] = credit_info.get('current_balance', 0)
+    # Format customer data for template (consistent with other pages)
+    customer_data = {
+        'id': customer['$id'],
+        'name': customer.get('name', 'Unknown'),
+        'phone_number': customer.get('phone_number', ''),
+        'current_balance': credit_info.get('current_balance', 0)
+    }
     
-    return render_template('business/add_transaction.html', customer=customer)
+    return render_template('business/add_transaction.html', customer=customer_data)
 
 @business_app.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -1026,7 +1191,7 @@ def remind_customer(customer_id):
         print(f"DEBUG: Customer type: {type(customer)}, Customer data: {customer}")
         
         # Get credit relationship for balance
-        credit_docs = appwrite_db.query_documents('customer_credits', [
+        credit_docs = appwrite_db.list_documents('customer_credits', [
             Query.equal('business_id', business_id),
             Query.equal('customer_id', customer_id)
         ])
@@ -1198,6 +1363,57 @@ def not_found_error(error):
 @business_app.errorhandler(500)
 def server_error(e):
     return render_template('errors/500.html'), 500
+
+@business_app.route('/api/bill_info/<transaction_id>')
+@login_required
+@business_required
+def get_bill_info(transaction_id):
+    """Get bill image information for a transaction"""
+    try:
+        business_id = safe_uuid(session.get('business_id'))
+        transaction_id = safe_uuid(transaction_id)
+        
+        # Get transaction from Appwrite
+        transaction = appwrite_db.get_document('transactions', transaction_id)
+        
+        if not transaction or transaction.get('business_id') != business_id:
+            return jsonify({'error': 'Transaction not found'}), 404
+        
+        receipt_url = transaction.get('receipt_image_url', '')
+        
+        if not receipt_url:
+            return jsonify({'has_bill': False})
+        
+        # Determine bill type and URL
+        bill_info = {
+            'has_bill': True,
+            'bill_type': 'unknown',
+            'view_url': url_for('bill_image', transaction_id=transaction_id)
+        }
+        
+        if receipt_url.startswith('https://res.cloudinary.com/') or receipt_url.startswith('http://res.cloudinary.com/'):
+            bill_info['bill_type'] = 'cloudinary'
+            bill_info['direct_url'] = receipt_url
+            # Generate thumbnail URL
+            public_id = extract_public_id_from_cloudinary_url(receipt_url)
+            if public_id:
+                bill_info['thumbnail_url'] = get_cloudinary_url(public_id, {
+                    'width': 150,
+                    'height': 150,
+                    'crop': 'fill',
+                    'quality': 'auto',
+                    'format': 'auto'
+                })
+        elif receipt_url.startswith('data:image/'):
+            bill_info['bill_type'] = 'base64'
+        else:
+            bill_info['bill_type'] = 'legacy'
+        
+        return jsonify(bill_info)
+        
+    except Exception as e:
+        print(f"Error getting bill info: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 # Run the application
 if __name__ == '__main__':

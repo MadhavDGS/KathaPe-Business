@@ -38,10 +38,19 @@
             <div class="bill-image-container">
                 <h3>Bill/Receipt Image</h3>
                 <div class="image-wrapper">
-                    <img src="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
-                         alt="Bill/Receipt for transaction" 
-                         class="bill-image"
-                         onclick="openImageModal(this.src)">
+                    {% if transaction.receipt_image_url.startswith('https://res.cloudinary.com/') %}
+                        <!-- Direct Cloudinary URL -->
+                        <img src="{{ transaction.receipt_image_url }}" 
+                             alt="Bill/Receipt for transaction" 
+                             class="bill-image"
+                             onclick="openImageModal('{{ transaction.receipt_image_url }}')">
+                    {% else %}
+                        <!-- Legacy base64 or other format - use bill_image route -->
+                        <img src="{{ url_for('bill_image', transaction_id=transaction.id) }}" 
+                             alt="Bill/Receipt for transaction" 
+                             class="bill-image"
+                             onclick="openImageModal('{{ url_for('bill_image', transaction_id=transaction.id) }}')">
+                    {% endif %}
                 </div>
                 <p class="image-hint">Click on the image to view full size</p>
             </div>
