@@ -24,15 +24,21 @@ class AppwriteDB:
         self.databases = None
         self.database_id = None
         self.collections = None
+        # Simple in-memory cache to reduce duplicate API calls
+        self._cache = {}
+        self._cache_ttl = 60  # Cache for 60 seconds
         
     def _ensure_initialized(self):
         """Initialize Appwrite config when first used"""
         if not self._initialized:
-            # Initialize Appwrite client
+            # Initialize Appwrite client with optimization
             self.client = Client()
             self.client.set_endpoint(os.environ.get('APPWRITE_ENDPOINT', 'https://cloud.appwrite.io/v1'))
             self.client.set_project(os.environ.get('APPWRITE_PROJECT_ID', 'your_project_id'))
             self.client.set_key(os.environ.get('APPWRITE_API_KEY', 'your_api_key'))
+            # Add headers for better performance
+            self.client.add_header('Cache-Control', 'no-cache')
+            self.client.add_header('Connection', 'keep-alive')
 
             # Initialize Databases service
             self.databases = Databases(self.client)
@@ -47,6 +53,35 @@ class AppwriteDB:
                 'transactions': 'transactions'
             }
             self._initialized = True
+    
+    def _get_cache_key(self, collection_name, document_id=None, query_hash=None):
+        """Generate cache key"""
+        if document_id:
+            return f"{collection_name}:{document_id}"
+        elif query_hash:
+            return f"{collection_name}:query:{query_hash}"
+        return None
+    
+    def _is_cache_valid(self, cache_key):
+        """Check if cache entry is still valid"""
+        if cache_key not in self._cache:
+            return False
+        import time
+        return (time.time() - self._cache[cache_key]['timestamp']) < self._cache_ttl
+    
+    def _get_from_cache(self, cache_key):
+        """Get data from cache"""
+        if self._is_cache_valid(cache_key):
+            return self._cache[cache_key]['data']
+        return None
+    
+    def _set_cache(self, cache_key, data):
+        """Set data in cache"""
+        import time
+        self._cache[cache_key] = {
+            'data': data,
+            'timestamp': time.time()
+        }
         
     def create_document(self, collection_name, data, document_id=None):
         """Create a new document in collection"""
@@ -70,14 +105,25 @@ class AppwriteDB:
             return None
 
     def get_document(self, collection_name, document_id):
-        """Get a single document by ID"""
+        """Get a single document by ID with caching"""
         try:
             self._ensure_initialized()
+            
+            # Check cache first
+            cache_key = self._get_cache_key(collection_name, document_id)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
             result = self.databases.get_document(
                 database_id=self.database_id,
                 collection_id=self.collections[collection_name],
                 document_id=document_id
             )
+            
+            # Cache the result
+            if result:
+                self._set_cache(cache_key, result)
             return result
         except AppwriteException as e:
             logger.error(f"Appwrite get error: {e}")

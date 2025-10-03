@@ -10,6 +10,9 @@ from flask import Response, jsonify
 from appwrite_utils import AppwriteDB
 from appwrite.query import Query
 
+# Import performance configuration
+from performance_config import *
+
 # Import Cloudinary
 import cloudinary
 import cloudinary.uploader
@@ -451,13 +454,14 @@ def business_dashboard():
         customers = []
         
         try:
-            # Get customer credits for this business
+            # Get customer credits for this business - OPTIMIZED: single query
             customer_credits = appwrite_db.list_documents('customer_credits', [
-                Query.equal('business_id', business_id)
+                Query.equal('business_id', business_id),
+                Query.limit(100)  # Reasonable limit
             ])
             total_customers = len(customer_credits)
             
-            # Get all transactions for this business (limited for dashboard)
+            # Get all transactions for this business (limited for dashboard) - OPTIMIZED: single query
             all_transactions = appwrite_db.list_documents('transactions', [
                 Query.equal('business_id', business_id),
                 Query.order_desc('created_at'),
@@ -475,24 +479,29 @@ def business_dashboard():
             # Get recent transactions for display (limited to 10)
             transactions = all_transactions[:10]
             
-            # Get customer details for the customers with credits
+            # OPTIMIZED: Build customer list from limited credits for dashboard performance
             customers_list = []
-            for credit in customer_credits[:10]:  # Limit to 10 for dashboard
+            for credit in customer_credits[:5]:  # Limit to 5 customers on dashboard
                 customer_id = credit.get('customer_id')
                 if customer_id:
-                    customer = appwrite_db.get_document('customers', customer_id)
-                    if customer:
-                        customer_data = {
-                            'id': customer['$id'],
-                            'name': customer.get('name', 'Unknown'),
-                            'phone_number': customer.get('phone_number', ''),
-                            'current_balance': credit.get('current_balance', 0)
-                        }
-                        customers_list.append(customer_data)
+                    try:
+                        # Use cache if available
+                        customer = appwrite_db.get_document('customers', customer_id)
+                        if customer:
+                            customer_data = {
+                                'id': customer['$id'],
+                                'name': customer.get('name', 'Unknown'),
+                                'phone_number': customer.get('phone_number', ''),
+                                'current_balance': credit.get('current_balance', 0)
+                            }
+                            customers_list.append(customer_data)
+                    except Exception as e:
+                        print(f"Error getting customer {customer_id}: {str(e)}")
+                        continue
             customers = customers_list
             
-            # Calculate total outstanding - sum all positive customer balances
-            total_outstanding = sum([customer['current_balance'] for customer in customers if customer['current_balance'] > 0])
+            # Calculate total outstanding - sum all positive customer balances from credits (faster)
+            total_outstanding = sum([credit.get('current_balance', 0) for credit in customer_credits if credit.get('current_balance', 0) > 0])
             
             # Limit to top 5 for display
             customers = customers[:5]
@@ -532,40 +541,62 @@ def business_customers():
     business_id = safe_uuid(session.get('business_id'))
     
     try:
-        # Get all customer credits for this business
+        # OPTIMIZED: Get all customer credits for this business
         customer_credits = appwrite_db.list_documents('customer_credits', [
-            Query.equal('business_id', business_id)
+            Query.equal('business_id', business_id),
+            Query.limit(MAX_CUSTOMERS_PAGE)  # Performance optimized limit
         ])
         
-        # Gather all customer details
+        # OPTIMIZED: Get all transactions for this business in one query
+        all_business_transactions = appwrite_db.list_documents('transactions', [
+            Query.equal('business_id', business_id),
+            Query.limit(1000)  # Increased limit but still reasonable
+        ])
+        
+        # OPTIMIZED: Build transaction lookup by customer_id for fast access
+        transactions_by_customer = {}
+        for transaction in all_business_transactions:
+            customer_id = transaction.get('customer_id')
+            if customer_id:
+                if customer_id not in transactions_by_customer:
+                    transactions_by_customer[customer_id] = []
+                transactions_by_customer[customer_id].append(transaction)
+        
+        # OPTIMIZED: Get customer details in batch
+        customer_ids = [credit.get('customer_id') for credit in customer_credits if credit.get('customer_id')]
+        customers_dict = {}
+        
+        # Batch fetch customers
+        for customer_id in customer_ids:
+            try:
+                customer = appwrite_db.get_document('customers', customer_id)
+                if customer:
+                    customers_dict[customer_id] = customer
+            except Exception as e:
+                print(f"Error getting customer {customer_id}: {str(e)}")
+                continue
+        
+        # OPTIMIZED: Build customer list with pre-fetched data
         customers = []
         for credit in customer_credits:
             customer_id = credit.get('customer_id')
-            if customer_id:
-                try:
-                    customer = appwrite_db.get_document('customers', customer_id)
-                    
-                    # Calculate actual balance from transactions
-                    transactions = appwrite_db.list_documents('transactions', [
-                        Query.equal('business_id', business_id),
-                        Query.equal('customer_id', customer_id)
-                    ])
-                    
-                    # Calculate totals the same way as customer details page
-                    credit_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'credit'])
-                    payment_total = sum([float(t.get('amount', 0)) for t in transactions if t.get('transaction_type') == 'payment'])
-                    current_balance = credit_total - payment_total
-                    
-                    customer_data = {
-                        'id': customer['$id'],
-                        'name': customer.get('name', 'Unknown'),
-                        'phone_number': customer.get('phone_number', ''),
-                        'current_balance': current_balance
-                    }
-                    customers.append(customer_data)
-                except Exception as e:
-                    print(f"Error getting customer {customer_id}: {str(e)}")
-                    continue
+            if customer_id and customer_id in customers_dict:
+                customer = customers_dict[customer_id]
+                
+                # Calculate balance from pre-fetched transactions
+                customer_transactions = transactions_by_customer.get(customer_id, [])
+                credit_total = sum([float(t.get('amount', 0)) for t in customer_transactions if t.get('transaction_type') == 'credit'])
+                payment_total = sum([float(t.get('amount', 0)) for t in customer_transactions if t.get('transaction_type') == 'payment'])
+                current_balance = credit_total - payment_total
+                
+                customer_data = {
+                    'id': customer['$id'],
+                    'name': customer.get('name', 'Unknown'),
+                    'phone_number': customer.get('phone_number', ''),
+                    'current_balance': current_balance,
+                    'transaction_count': len(customer_transactions)
+                }
+                customers.append(customer_data)
         
         # Sort customers by current balance (highest first), then by name
         customers.sort(key=lambda x: (-x.get('current_balance', 0), x.get('name', '')))
@@ -1012,20 +1043,14 @@ def all_transactions():
     try:
         business_id = safe_uuid(session.get('business_id'))
         page = int(request.args.get('page', 1))
-        per_page = 50  # Show 50 transactions per page
+        per_page = MAX_TRANSACTIONS_PER_PAGE  # Optimized smaller page size
         offset = (page - 1) * per_page
         
         transactions = []
         total_count = 0
         
         try:
-            # Get total count for pagination - Appwrite doesn't have direct count, we'll get all and count
-            all_transactions = appwrite_db.list_documents('transactions', [
-                Query.equal('business_id', business_id)
-            ])
-            total_count = len(all_transactions)
-            
-            # Get transactions with pagination and sorting
+            # OPTIMIZED: Get transactions with pagination and sorting (avoid double query)
             paginated_transactions = appwrite_db.list_documents('transactions', [
                 Query.equal('business_id', business_id),
                 Query.order_desc('created_at'),
@@ -1033,16 +1058,30 @@ def all_transactions():
                 Query.offset(offset)
             ])
             
-            # Format transactions for display
+            # For pagination info, we'll estimate based on page results
+            # This is more efficient than fetching all records just to count
+            total_count = len(paginated_transactions) + offset
+            if len(paginated_transactions) == per_page:
+                # Likely more pages, estimate higher count
+                total_count += per_page
+            
+            # OPTIMIZED: Batch get customer names
+            customer_ids = list(set([tx.get('customer_id') for tx in paginated_transactions if tx.get('customer_id')]))
+            customers_dict = {}
+            
+            # Batch fetch customer details
+            for customer_id in customer_ids:
+                try:
+                    customer = appwrite_db.get_document('customers', customer_id)
+                    if customer:
+                        customers_dict[customer_id] = customer.get('name', 'Unknown')
+                except:
+                    customers_dict[customer_id] = 'Unknown'
+            
+            # OPTIMIZED: Format transactions using pre-fetched customer data
             for tx in paginated_transactions:
-                customer_name = 'Unknown'
                 customer_id = tx.get('customer_id')
-                if customer_id:
-                    try:
-                        customer = appwrite_db.get_document('customers', customer_id)
-                        customer_name = customer.get('name', 'Unknown')
-                    except:
-                        pass
+                customer_name = customers_dict.get(customer_id, 'Unknown')
                 
                 transactions.append({
                     'id': tx['$id'],
