@@ -40,6 +40,17 @@ logger = logging.getLogger(__name__)
 # Check if running on Render
 RENDER_DEPLOYMENT = os.environ.get('RENDER', False)
 
+# Timezone helper functions
+def get_ist_now():
+    """Get current time in IST timezone"""
+    from datetime import timezone
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(ist)
+
+def get_ist_isoformat():
+    """Get current time in IST as ISO format string"""
+    return get_ist_now().isoformat()
+
 
 # Appwrite Configuration
 from appwrite_config import AppwriteConfig
@@ -564,14 +575,22 @@ def create_app(app_name='Khatape'):
 def format_datetime(value, format='%d %b %Y, %I:%M %p'):
     if isinstance(value, str):
         try:
-            # Try to parse ISO format first
+            # Parse the datetime string
             dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            # If the datetime is already in IST (no timezone conversion needed)
-            # We'll assume stored times are now in IST after our update
-            return dt.strftime(format)
-        except:
+            
+            # Always add 5:30 hours to display correct IST time
+            dt_adjusted = dt + timedelta(hours=5, minutes=30)
+            
+            return dt_adjusted.strftime(format)
+        except Exception as e:
+            print(f"Error parsing datetime {value}: {str(e)}")
             return value
     elif hasattr(value, 'strftime'):
-        return value.strftime(format)
+        # For datetime objects, add 5:30 hours
+        try:
+            dt_adjusted = value + timedelta(hours=5, minutes=30)
+            return dt_adjusted.strftime(format)
+        except:
+            return value.strftime(format)
     else:
         return str(value)

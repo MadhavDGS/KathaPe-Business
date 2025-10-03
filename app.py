@@ -317,7 +317,7 @@ def login():
                                 'user_id': user_id,
                                 'name': f"{session['user_name']}'s Business",
                                 'access_pin': access_pin,
-                                'created_at': datetime.now().isoformat(),
+                                'created_at': get_ist_isoformat(),
                                 'is_active': True
                             }
                             appwrite_db.create_document('businesses', business_doc, business_id)
@@ -385,7 +385,7 @@ def register():
                 'phone_number': phone,
                 'user_type': 'business',
                 'password': password,
-                'created_at': datetime.now().isoformat(),
+                'created_at': get_ist_isoformat(),
                 'is_active': True
             }
             user_result = appwrite_db.create_document('users', user_doc, user_id)
@@ -397,7 +397,7 @@ def register():
                     'name': f"{name}'s Business",
                     'description': 'My business account',
                     'access_pin': access_pin,
-                    'created_at': datetime.now().isoformat(),
+                    'created_at': get_ist_isoformat(),
                     'is_active': True
                 }
                 appwrite_db.create_document('businesses', business_doc, business_id)
@@ -479,25 +479,40 @@ def business_dashboard():
             # Get recent transactions for display (limited to 10)
             transactions = all_transactions[:10]
             
-            # OPTIMIZED: Build customer list from limited credits for dashboard performance
+            # OPTIMIZED: Build customer list from recent transactions for dashboard
             customers_list = []
-            for credit in customer_credits[:5]:  # Limit to 5 customers on dashboard
-                customer_id = credit.get('customer_id')
-                if customer_id:
-                    try:
-                        # Use cache if available
-                        customer = appwrite_db.get_document('customers', customer_id)
-                        if customer:
-                            customer_data = {
-                                'id': customer['$id'],
-                                'name': customer.get('name', 'Unknown'),
-                                'phone_number': customer.get('phone_number', ''),
-                                'current_balance': credit.get('current_balance', 0)
-                            }
-                            customers_list.append(customer_data)
-                    except Exception as e:
-                        print(f"Error getting customer {customer_id}: {str(e)}")
-                        continue
+            recent_customer_ids = []
+            
+            # Get unique customer IDs from recent transactions (most recent first) - show exactly 5
+            for transaction in transactions:  # transactions are already sorted by created_at desc
+                customer_id = transaction.get('customer_id')
+                if customer_id and customer_id not in recent_customer_ids:
+                    recent_customer_ids.append(customer_id)
+                    if len(recent_customer_ids) >= 5:  # Limit to exactly 5 customers
+                        break
+            
+            # Get customer details and balances for selected customers (only from recent transactions)
+            for customer_id in recent_customer_ids:
+                try:
+                    customer = appwrite_db.get_document('customers', customer_id)
+                    if customer:
+                        # Find the customer's current balance from customer_credits
+                        customer_balance = 0
+                        for credit in customer_credits:
+                            if credit.get('customer_id') == customer_id:
+                                customer_balance = credit.get('current_balance', 0)
+                                break
+                        
+                        customer_data = {
+                            'id': customer['$id'],
+                            'name': customer.get('name', 'Unknown'),
+                            'phone_number': customer.get('phone_number', ''),
+                            'current_balance': customer_balance
+                        }
+                        customers_list.append(customer_data)
+                except Exception as e:
+                    print(f"Error getting customer {customer_id}: {str(e)}")
+                    continue
             customers = customers_list
             
             # Calculate total outstanding - sum all positive customer balances from credits (faster)
@@ -672,7 +687,7 @@ def business_customer_details(customer_id):
             try:
                 appwrite_db.update_document('customer_credits', credit['$id'], {
                     'current_balance': calculated_balance,
-                    'updated_at': datetime.now().isoformat()
+                    'updated_at': get_ist_isoformat()
                 })
                 customer_data['current_balance'] = calculated_balance
             except Exception as e:
@@ -721,7 +736,7 @@ def add_customer():
                 customer_data = {
                     'name': name,
                     'phone_number': phone,
-                    'created_at': datetime.now().isoformat()
+                    'created_at': get_ist_isoformat()
                 }
                 customer = appwrite_db.create_document('customers', customer_data)
                 customer_id = customer['$id']
@@ -741,7 +756,7 @@ def add_customer():
                             'phone_number': phone,
                             'user_type': 'customer',
                             'password': 'devi123',
-                            'created_at': datetime.now().isoformat()
+                            'created_at': get_ist_isoformat()
                         }
                         user_result = appwrite_db.create_document('users', user_data)
                         
@@ -772,8 +787,8 @@ def add_customer():
                     'business_id': business_id,
                     'customer_id': customer_id,
                     'current_balance': initial_balance,
-                    'created_at': datetime.now().isoformat(),
-                    'updated_at': datetime.now().isoformat()
+                    'created_at': get_ist_isoformat(),
+                    'updated_at': get_ist_isoformat()
                 }
                 appwrite_db.create_document('customer_credits', credit_data)
                 print(f"DEBUG: Created credit relationship for customer {customer_id} with business {business_id}")
@@ -838,7 +853,7 @@ def business_transactions(customer_id):
                 'amount': amount,
                 'transaction_type': transaction_type,
                 'notes': notes,
-                'created_at': datetime.now().isoformat(),
+                'created_at': get_ist_isoformat(),
                 'created_by': str(session.get('user_id'))
             }
             
@@ -872,7 +887,7 @@ def business_transactions(customer_id):
                         # Update the balance
                         appwrite_db.update_document('customer_credits', credit_record['$id'], {
                             'current_balance': new_balance,
-                            'updated_at': datetime.now().isoformat()
+                            'updated_at': get_ist_isoformat()
                         })
                         
                         print(f"Updated customer balance: {current_balance} -> {new_balance} (transaction: {transaction_type} {amount})")
@@ -883,8 +898,8 @@ def business_transactions(customer_id):
                             'business_id': business_id,
                             'customer_id': customer_id,
                             'current_balance': initial_balance,
-                            'created_at': datetime.now().isoformat(),
-                            'updated_at': datetime.now().isoformat()
+                            'created_at': get_ist_isoformat(),
+                            'updated_at': get_ist_isoformat()
                         }
                         appwrite_db.create_document('customer_credits', credit_data)
                         print(f"Created new customer credit record with balance: {initial_balance}")
@@ -968,7 +983,7 @@ def regenerate_business_pin():
         business = appwrite_db.get_document('businesses', business_id)
         appwrite_db.update_document('businesses', business_id, {
             'access_pin': new_pin,
-            'updated_at': datetime.now().isoformat()
+            'updated_at': get_ist_isoformat()
         })
         
         # Update the session
@@ -1200,7 +1215,7 @@ def sync_customer_data(customer_id):
         if credit_records:
             appwrite_db.update_document('customer_credits', credit_records[0]['$id'], {
                 'current_balance': new_balance,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': get_ist_isoformat()
             })
         
         flash(f'Customer data synced successfully! Found {len(transactions)} transactions. Balance: ₹{new_balance:.2f}', 'success')

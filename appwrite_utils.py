@@ -89,8 +89,9 @@ class AppwriteDB:
             self._ensure_initialized()
             if document_id is None:
                 document_id = str(uuid.uuid4())
-            # Add timestamps
-            now = datetime.now().isoformat()
+            # Add timestamps in IST
+            from common_utils import get_ist_isoformat
+            now = get_ist_isoformat()
             data['created_at'] = now
             data['updated_at'] = now
             result = self.databases.create_document(
@@ -150,7 +151,8 @@ class AppwriteDB:
         """Update a document"""
         try:
             self._ensure_initialized()
-            data['updated_at'] = datetime.now().isoformat()
+            from common_utils import get_ist_isoformat
+            data['updated_at'] = get_ist_isoformat()
             result = self.databases.update_document(
                 database_id=self.database_id,
                 collection_id=self.collections[collection_name],

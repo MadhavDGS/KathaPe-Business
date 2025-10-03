@@ -38,7 +38,8 @@ appwrite_db = AppwriteConfig()
 
 def get_current_timestamp():
     """Get current timestamp in ISO format"""
-    return datetime.now().isoformat()
+    from common_utils import get_ist_isoformat
+    return get_ist_isoformat()
 
 def safe_uuid_appwrite(value):
     """Generate a safe UUID for Appwrite"""
