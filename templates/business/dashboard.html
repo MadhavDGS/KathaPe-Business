@@ -53,6 +53,10 @@
             <i class="fas fa-user-plus"></i>
             <span>Add Customer</span>
         </a>
+        <a href="#" class="action-btn qr-btn" onclick="toggleQRCode(event)">
+            <i class="fas fa-qrcode"></i>
+            <span>QR Code</span>
+        </a>
     </div>
 
     <!-- Bulk Actions -->
@@ -64,8 +68,8 @@
 
     </div>
 
-    <!-- QR Code Section -->
-    <div class="connect-card">
+    <!-- QR Code Section (Hidden by default) -->
+    <div class="connect-card" id="qr-section" style="display: none;">
         <div class="connect-header">
             <h3>Customer Connection</h3>
             <p>Share these details with your customers to connect</p>
@@ -331,7 +335,7 @@
 /* Action Buttons */
 .action-buttons {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: var(--spacing);
     margin-bottom: var(--spacing);
 }
@@ -375,6 +379,10 @@
 
 .action-btn.add-btn i {
     color: var(--payment-color);
+}
+
+.action-btn.qr-btn i {
+    color: #ff9500;
 }
 
 /* Bulk Actions */
@@ -831,7 +839,7 @@
     }
     
     .action-buttons {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 15px;
     }
     
@@ -883,6 +891,17 @@
 
 {% block scripts %}
 <script>
+    function toggleQRCode(event) {
+        event.preventDefault();
+        const qrSection = document.getElementById('qr-section');
+        if (qrSection.style.display === 'none') {
+            qrSection.style.display = 'block';
+            qrSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            qrSection.style.display = 'none';
+        }
+    }
+
     function refreshQRCode(event) {
         event.preventDefault();
         
